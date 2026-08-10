@@ -26,6 +26,11 @@ function App() {
     [tracks],
   );
 
+  const estimatedTracks = useMemo(
+    () => tracks.filter((track) => track.analysisStatus === 'fallback').length,
+    [tracks],
+  );
+
   const patchTrack = (trackId: string, update: (track: TrackInput) => TrackInput) => {
     setTracks((current) => current.map((track) => (track.id === trackId ? update(track) : track)));
   };
@@ -115,25 +120,56 @@ function App() {
     <div className="page-shell">
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
+      <div className="ambient ambient-bottom" />
       <main className="app-frame">
-        <section className="hero-panel">
-          <p className="eyebrow">mixR</p>
-          <h1>Turn loose tracks into a DJ-ready mix blueprint.</h1>
-          <p className="hero-copy">
-            Upload audio or drop streaming links, pick a vibe, set an optional runtime, and let the app score energy second by second to plan order, trims, EQ, and transitions.
-          </p>
+        <section className="topbar panel-chrome">
+          <div>
+            <p className="eyebrow">mixR studio</p>
+            <h1>Build a cleaner DJ mix plan.</h1>
+            <p className="topbar-copy">Add tracks, pick a vibe, then generate the set order and transition windows.</p>
+          </div>
+          <div className="topbar-actions simple-actions">
+            <span className="header-stat">{analyzableTracks.length} ready</span>
+            <button type="button" className="generate-button" onClick={handleGenerateMix}>
+              Build mix
+            </button>
+          </div>
         </section>
 
-        <section className="control-grid">
-          <div className="panel panel-form">
-            <label>
-              <span>Mix title</span>
-              <input value={mixTitle} onChange={(event) => setMixTitle(event.target.value)} placeholder="Warehouse opener" />
-            </label>
+        <section className="workspace-grid">
+          <aside className="workspace-sidebar panel-chrome">
+            <div className="sidebar-section">
+              <div className="section-heading stacked-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Mix setup</p>
+                  <h2>Composer</h2>
+                </div>
+              </div>
 
-            <label>
-              <span>Vibe</span>
-              <div className="vibe-grid">
+              <label>
+                <span>Mix title</span>
+                <input value={mixTitle} onChange={(event) => setMixTitle(event.target.value)} placeholder="Warehouse opener" />
+              </label>
+
+              <label>
+                <span>Target length in minutes</span>
+                <input
+                  value={targetMinutes}
+                  onChange={(event) => setTargetMinutes(event.target.value)}
+                  inputMode="numeric"
+                  placeholder="Optional"
+                />
+              </label>
+            </div>
+
+            <div className="sidebar-section">
+              <div className="section-heading stacked-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Mood</p>
+                  <h3>Vibe</h3>
+                </div>
+              </div>
+              <div className="vibe-grid-simple">
                 {vibeOptions.map((option) => (
                   <button
                     key={option}
@@ -145,24 +181,20 @@ function App() {
                   </button>
                 ))}
               </div>
-            </label>
+            </div>
 
-            <label>
-              <span>Target length in minutes</span>
-              <input
-                value={targetMinutes}
-                onChange={(event) => setTargetMinutes(event.target.value)}
-                inputMode="numeric"
-                placeholder="Optional"
-              />
-            </label>
+            <div className="sidebar-section">
+              <div className="section-heading stacked-heading compact-heading">
+                <div>
+                  <p className="eyebrow">Ingest</p>
+                  <h3>Add sources</h3>
+                </div>
+              </div>
 
-            <div className="input-stack">
-              <span>Add songs</span>
               <label className="upload-dropzone">
                 <input type="file" accept="audio/*" multiple onChange={handleFileUpload} />
-                <strong>Upload local files</strong>
-                <small>MP3, WAV, M4A, FLAC, or any browser-decodable audio file.</small>
+                <strong>Upload local audio</strong>
+                <small>Browser-decoded and analyzed second by second for real transition points.</small>
               </label>
 
               <div className="link-row">
@@ -172,145 +204,137 @@ function App() {
                   placeholder="Paste YouTube, Spotify, or SoundCloud link"
                 />
                 <button type="button" onClick={handleAddLink}>
-                  Add link
+                  Add
                 </button>
               </div>
+              <p className="summary-note">{estimatedTracks > 0 ? `${estimatedTracks} link sources are using estimate mode.` : 'Uploads get full local analysis.'}</p>
+              {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
             </div>
+          </aside>
 
-            <button type="button" className="generate-button" onClick={handleGenerateMix}>
-              Build mix
-            </button>
+          <section className="workspace-main">
+            <section className="panel-chrome library-panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Library</p>
+                  <h2>Source tracks</h2>
+                </div>
+                <p>{tracks.length} total</p>
+              </div>
 
-            {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
-          </div>
-
-          <div className="panel panel-summary">
-            <div className="summary-row">
-              <span>Tracks ready</span>
-              <strong>{analyzableTracks.length}</strong>
-            </div>
-            <div className="summary-row">
-              <span>Uploads with full analysis</span>
-              <strong>{tracks.filter((track) => track.analysisStatus === 'ready').length}</strong>
-            </div>
-            <div className="summary-row">
-              <span>Links using estimate mode</span>
-              <strong>{tracks.filter((track) => track.analysisStatus === 'fallback').length}</strong>
-            </div>
-            <p className="summary-note">
-              Uploaded songs are decoded locally and scored one second at a time. Streaming links stay available as planning inputs, but raw audio analysis for those providers needs a backend ingestion pipeline.
-            </p>
-          </div>
-        </section>
-
-        <section className="panel library-panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Library</p>
-              <h2>Source tracks</h2>
-            </div>
-            <p>{tracks.length} total</p>
-          </div>
-
-          <div className="track-grid">
-            {tracks.length === 0 ? (
-              <div className="empty-card">Add songs to start building the mix.</div>
-            ) : (
-              tracks.map((track) => (
-                <article key={track.id} className="track-card">
-                  <div className="track-topline">
-                    <div>
-                      <p className="track-title">{track.title}</p>
-                      <p className="track-source">
-                        {track.source.kind === 'upload' ? 'Local upload' : track.source.provider}
-                      </p>
-                    </div>
-                    <button type="button" className="ghost-button" onClick={() => removeTrack(track.id)}>
-                      Remove
-                    </button>
-                  </div>
-
-                  <div className="status-pill status-pill-" data-state={track.analysisStatus}>
-                    {track.analysisStatus}
-                  </div>
-
-                  {track.analysis ? (
-                    <>
-                      <div className="metric-row">
-                        <span>{track.analysis.bpm} BPM</span>
-                        <span>{track.analysis.key}</span>
-                        <span>{formatSeconds(track.analysis.durationSeconds)}</span>
-                      </div>
-                      <MiniWave slices={track.analysis.slices} />
-                      <div className="metric-row muted-row">
-                        <span>Intro {formatSeconds(track.analysis.introSecond)}</span>
-                        <span>Outro {formatSeconds(track.analysis.outroSecond)}</span>
-                      </div>
-                    </>
-                  ) : null}
-
-                  {track.notes?.length ? <p className="track-note">{track.notes.join(' ')}</p> : null}
-                </article>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="panel plan-panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Mix Plan</p>
-              <h2>{mixPlan?.title ?? 'No mix generated yet'}</h2>
-            </div>
-            {mixPlan ? <p>{formatSeconds(mixPlan.totalDurationSeconds)}</p> : null}
-          </div>
-
-          {mixPlan ? (
-            <>
-              <p className="plan-summary">{mixPlan.summary}</p>
-              {mixPlan.warnings.map((warning) => (
-                <p key={warning} className="warning-banner">
-                  {warning}
-                </p>
-              ))}
-
-              <div className="plan-track-list">
-                {mixPlan.tracks.map((track, index) => (
-                  <article key={track.trackId} className="plan-track-card">
-                    <div className="plan-track-index">{String(index + 1).padStart(2, '0')}</div>
-                    <div className="plan-track-body">
+              <div className="track-grid">
+                {tracks.length === 0 ? (
+                  <div className="empty-card">Add songs to start building the mix.</div>
+                ) : (
+                  tracks.map((track) => (
+                    <article key={track.id} className="track-card">
                       <div className="track-topline">
                         <div>
                           <p className="track-title">{track.title}</p>
                           <p className="track-source">
-                            {track.provider} · {track.bpm} BPM · {track.key}
+                            {track.source.kind === 'upload' ? 'Local upload' : track.source.provider}
                           </p>
                         </div>
-                        <p className="plan-duration">{formatSeconds(track.playDurationSeconds)}</p>
+                        <button type="button" className="ghost-button" onClick={() => removeTrack(track.id)}>
+                          Remove
+                        </button>
                       </div>
 
-                      <p className="track-note">EQ: {track.eqProfile}</p>
-                      <p className="track-note">
-                        Play window: {formatSeconds(track.startOffsetSeconds)} to {formatSeconds(track.endOffsetSeconds)}
-                      </p>
-                      {track.transitionIn ? (
-                        <p className="track-note">
-                          Transition in: {track.transitionIn.style} for {track.transitionIn.lengthSeconds}s at {formatSeconds(track.transitionIn.fromSecond)}. {track.transitionIn.reason}
-                        </p>
+                      <div className="status-pill" data-state={track.analysisStatus}>
+                        {track.analysisStatus}
+                      </div>
+
+                      {track.analysis ? (
+                        <>
+                          <div className="metric-row metric-row-tight">
+                            <span>{track.analysis.bpm} BPM</span>
+                            <span>{track.analysis.key}</span>
+                            <span>{formatSeconds(track.analysis.durationSeconds)}</span>
+                          </div>
+                          <MiniWave slices={track.analysis.slices} />
+                          <div className="metric-row muted-row">
+                            <span>Intro {formatSeconds(track.analysis.introSecond)}</span>
+                            <span>Outro {formatSeconds(track.analysis.outroSecond)}</span>
+                          </div>
+                        </>
                       ) : null}
-                      {track.transitionOut ? (
-                        <p className="track-note">
-                          Transition out: {track.transitionOut.style} from {formatSeconds(track.transitionOut.fromSecond)} to {formatSeconds(track.transitionOut.toSecond)}. {track.transitionOut.reason}
-                        </p>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
+
+                      {track.notes?.length ? <p className="track-note">{track.notes.join(' ')}</p> : null}
+                    </article>
+                  ))
+                )}
               </div>
-            </>
-          ) : (
-            <div className="empty-card">Generate a mix to see the ordered set, trims, and transitions.</div>
-          )}
+            </section>
+
+            <section className="panel-chrome plan-panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Mix plan</p>
+                  <h2>{mixPlan?.title ?? 'No mix generated yet'}</h2>
+                </div>
+                {mixPlan ? <p>{formatSeconds(mixPlan.totalDurationSeconds)}</p> : null}
+              </div>
+
+              {mixPlan ? (
+                <>
+                  <p className="plan-summary">{mixPlan.summary}</p>
+                  {mixPlan.warnings.map((warning) => (
+                    <p key={warning} className="warning-banner">
+                      {warning}
+                    </p>
+                  ))}
+
+                  <div className="timeline-ribbon">
+                    {mixPlan.tracks.map((track) => (
+                      <div
+                        key={track.trackId}
+                        className="timeline-segment"
+                        style={{ flexGrow: Math.max(1, track.playDurationSeconds) }}
+                      >
+                        <span>{track.title}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="plan-track-list">
+                    {mixPlan.tracks.map((track, index) => (
+                      <article key={track.trackId} className="plan-track-card">
+                        <div className="plan-track-index">{String(index + 1).padStart(2, '0')}</div>
+                        <div className="plan-track-body">
+                          <div className="track-topline">
+                            <div>
+                              <p className="track-title">{track.title}</p>
+                              <p className="track-source">
+                                {track.provider} · {track.bpm} BPM · {track.key}
+                              </p>
+                            </div>
+                            <p className="plan-duration">{formatSeconds(track.playDurationSeconds)}</p>
+                          </div>
+
+                          <p className="track-note">EQ: {track.eqProfile}</p>
+                          <p className="track-note">
+                            Play window: {formatSeconds(track.startOffsetSeconds)} to {formatSeconds(track.endOffsetSeconds)}
+                          </p>
+                          {track.transitionIn ? (
+                            <p className="track-note">
+                              Transition in: {track.transitionIn.style} for {track.transitionIn.lengthSeconds}s at {formatSeconds(track.transitionIn.fromSecond)}. {track.transitionIn.reason}
+                            </p>
+                          ) : null}
+                          {track.transitionOut ? (
+                            <p className="track-note">
+                              Transition out: {track.transitionOut.style} from {formatSeconds(track.transitionOut.fromSecond)} to {formatSeconds(track.transitionOut.toSecond)}. {track.transitionOut.reason}
+                            </p>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="empty-card">Generate a mix to see the ordered set, trims, and transitions.</div>
+              )}
+            </section>
+          </section>
         </section>
       </main>
     </div>
