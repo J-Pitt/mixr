@@ -12,143 +12,213 @@ import type { MixPlan, TrackInput, Vibe } from './types';
 
 const vibeOptions: Vibe[] = ['Warm Up', 'Sunset Cruise', 'Peak Time', 'Late Night', 'After Hours'];
 
+interface SongRow {
+  id: string;
+  value: string;
+  file: File | null;
+}
+
+interface SavedMix {
+  id: string;
+  title: string;
+  createdAt: string;
+  selectedVibes: Vibe[];
+  plan: MixPlan;
+}
+
+const vibeScale: Record<Vibe, number> = {
+  'Warm Up': 1,
+  'Sunset Cruise': 2,
+  'Late Night': 3,
+  'After Hours': 4,
+  'Peak Time': 5,
+};
+
 function App() {
   const [mixTitle, setMixTitle] = useState('Friday Roof Set');
-  const [vibe, setVibe] = useState<Vibe>('Peak Time');
   const [targetMinutes, setTargetMinutes] = useState('45');
-  const [linkInput, setLinkInput] = useState('');
+  const [selectedVibes, setSelectedVibes] = useState<Vibe[]>(['Peak Time']);
+  const [songRows, setSongRows] = useState<SongRow[]>([{ id: crypto.randomUUID(), value: '', file: null }]);
   const [tracks, setTracks] = useState<TrackInput[]>([]);
   const [mixPlan, setMixPlan] = useState<MixPlan | null>(null);
+  const [myMixes, setMyMixes] = useState<SavedMix[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isCreatingMix, setIsCreatingMix] = useState(false);
+
+  const patchTrack = (trackId: string, update: (track: TrackInput) => TrackInput) => {
+    setTracks((current) => current.map((track) => (track.id === trackId ? update(track) : track)));
+  };
 
   const analyzableTracks = useMemo(
     () => tracks.filter((track) => track.analysisStatus === 'ready' || track.analysisStatus === 'fallback'),
     [tracks],
   );
 
-  const estimatedTracks = useMemo(
-    () => tracks.filter((track) => track.analysisStatus === 'fallback').length,
-    [tracks],
-  );
-
-  const patchTrack = (trackId: string, update: (track: TrackInput) => TrackInput) => {
-    setTracks((current) => current.map((track) => (track.id === trackId ? update(track) : track)));
-  };
-
-  const runAnalysis = async (track: TrackInput) => {
+  const runAnalysis = async (track: TrackInput): Promise<TrackInput> => {
     patchTrack(track.id, (current) => ({ ...current, analysisStatus: 'analyzing', notes: [] }));
 
     try {
       if (track.source.kind === 'upload') {
         const analysis = await analyzeUploadedTrack(track.source.file);
-        patchTrack(track.id, (current) => ({
-          ...current,
+        const updatedTrack: TrackInput = {
+          ...track,
           analysis,
           analysisStatus: 'ready',
           notes: ['Uploaded audio decoded locally in the browser.'],
-        }));
-      } else {
-        const analysis = analyzeLinkedTrack(track.source.url, track.source.provider);
-        patchTrack(track.id, (current) => ({
-          ...current,
-          analysis,
-          analysisStatus: 'fallback',
-          notes: ['Streaming link kept as a planning source with estimated analysis.'],
-        }));
+        };
+        patchTrack(track.id, () => updatedTrack);
+        return updatedTrack;
       }
+
+      const analysis = analyzeLinkedTrack(track.source.url, track.source.provider);
+      const updatedTrack: TrackInput = {
+        ...track,
+        analysis,
+        analysisStatus: 'fallback',
+        notes: ['Streaming link kept as a planning source with estimated analysis.'],
+      };
+      patchTrack(track.id, () => updatedTrack);
+      return updatedTrack;
     } catch (error) {
-      patchTrack(track.id, (current) => ({
-        ...current,
+      const updatedTrack: TrackInput = {
+        ...track,
         analysisStatus: 'error',
         notes: [error instanceof Error ? error.message : 'Analysis failed.'],
-      }));
+      };
+      patchTrack(track.id, () => updatedTrack);
+      return updatedTrack;
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const nextFiles = Array.from(event.target.files ?? []);
-    if (nextFiles.length === 0) {
-      return;
-    }
-
-    setErrorMessage(null);
-    setMixPlan(null);
-    const nextTracks = nextFiles.map(createUploadTrack);
-    setTracks((current) => [...current, ...nextTracks]);
-    await Promise.all(nextTracks.map((track) => runAnalysis(track)));
-    event.target.value = '';
+  const updateSongRow = (rowId: string, update: (row: SongRow) => SongRow) => {
+    setSongRows((current) => current.map((row) => (row.id === rowId ? update(row) : row)));
   };
 
-  const handleAddLink = async () => {
-    const provider = detectProvider(linkInput.trim());
-    if (provider === 'unknown') {
-      setErrorMessage('Use a YouTube, Spotify, or SoundCloud link.');
-      return;
-    }
-
-    setErrorMessage(null);
-    setMixPlan(null);
-    const track = createLinkTrack(linkInput.trim());
-    setTracks((current) => [...current, track]);
-    setLinkInput('');
-    await runAnalysis(track);
+  const addSongRow = () => {
+    setSongRows((current) => [...current, { id: crypto.randomUUID(), value: '', file: null }]);
   };
 
-  const removeTrack = (trackId: string) => {
-    setTracks((current) => current.filter((track) => track.id !== trackId));
-    setMixPlan(null);
+  const removeSongRow = (rowId: string) => {
+    setSongRows((current) => (current.length === 1 ? current : current.filter((row) => row.id !== rowId)));
   };
 
-  const handleGenerateMix = () => {
-    if (analyzableTracks.length < 2) {
-      setErrorMessage('Add at least two analyzed tracks before generating a mix.');
-      return;
-    }
-
-    setErrorMessage(null);
-    const parsedTarget = targetMinutes.trim() ? Number(targetMinutes) : undefined;
-    const plan = generateMixPlan({
-      title: mixTitle,
-      vibe,
-      targetMinutes: parsedTarget && Number.isFinite(parsedTarget) ? parsedTarget : undefined,
-      tracks: analyzableTracks,
+  const toggleVibe = (vibe: Vibe) => {
+    setSelectedVibes((current) => {
+      if (current.includes(vibe)) {
+        return current.length === 1 ? current : current.filter((item) => item !== vibe);
+      }
+      return [...current, vibe];
     });
-    setMixPlan(plan);
+  };
+
+  const resolveSelectedVibes = (vibes: Vibe[]) => {
+    if (vibes.length === 1) {
+      return vibes[0];
+    }
+
+    const average = vibes.reduce((total, vibe) => total + vibeScale[vibe], 0) / vibes.length;
+    return vibeOptions.reduce((closest, vibe) => {
+      const currentDistance = Math.abs(vibeScale[vibe] - average);
+      const closestDistance = Math.abs(vibeScale[closest] - average);
+      return currentDistance < closestDistance ? vibe : closest;
+    }, vibeOptions[0]);
+  };
+
+  const buildTracksFromRows = () => {
+    const completedRows = songRows.filter((row) => row.file || row.value.trim());
+    if (completedRows.length < 2) {
+      throw new Error('Add at least two songs to create a mix.');
+    }
+
+    return completedRows.map((row) => {
+      if (row.file) {
+        return createUploadTrack(row.file);
+      }
+
+      const provider = detectProvider(row.value.trim());
+      if (provider === 'unknown') {
+        throw new Error('Song links must be from YouTube, Spotify, or SoundCloud.');
+      }
+
+      return createLinkTrack(row.value.trim());
+    });
+  };
+
+  const handleCreateMix = async () => {
+    setErrorMessage(null);
+    setMixPlan(null);
+
+    if (selectedVibes.length === 0) {
+      setErrorMessage('Choose at least one vibe.');
+      return;
+    }
+
+    try {
+      setIsCreatingMix(true);
+      const draftTracks = buildTracksFromRows();
+      setTracks(draftTracks);
+
+      const analyzedTracks = await Promise.all(draftTracks.map((track) => runAnalysis(track)));
+      const readyTracks = analyzedTracks.filter(
+        (track) => track.analysisStatus === 'ready' || track.analysisStatus === 'fallback',
+      );
+
+      if (readyTracks.length < 2) {
+        throw new Error('At least two songs need to analyze successfully to create a mix.');
+      }
+
+      const parsedTarget = targetMinutes.trim() ? Number(targetMinutes) : undefined;
+      const plan = generateMixPlan({
+        title: mixTitle,
+        vibe: resolveSelectedVibes(selectedVibes),
+        targetMinutes: parsedTarget && Number.isFinite(parsedTarget) ? parsedTarget : undefined,
+        tracks: readyTracks,
+      });
+
+      setMixPlan(plan);
+      setMyMixes((current) => [
+        {
+          id: crypto.randomUUID(),
+          title: plan.title,
+          createdAt: new Date().toLocaleString(),
+          selectedVibes: [...selectedVibes],
+          plan,
+        },
+        ...current,
+      ]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Could not create mix.');
+    } finally {
+      setIsCreatingMix(false);
+    }
   };
 
   return (
     <div className="page-shell">
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
-      <div className="ambient ambient-bottom" />
       <main className="app-frame">
-        <section className="topbar panel-chrome">
-          <div>
-            <p className="eyebrow">mixR studio</p>
-            <h1>Build a cleaner DJ mix plan.</h1>
-            <p className="topbar-copy">Add tracks, pick a vibe, then generate the set order and transition windows.</p>
-          </div>
-          <div className="topbar-actions simple-actions">
-            <span className="header-stat">{analyzableTracks.length} ready</span>
-            <button type="button" className="generate-button" onClick={handleGenerateMix}>
-              Build mix
-            </button>
-          </div>
+        <section className="hero-block">
+          <p className="eyebrow">mixR</p>
+          <h1>Create polished DJ mixes from your tracks.</h1>
+          <p className="hero-copy">
+            Build a new mix from uploads or links, combine multiple vibe presets, and get a clean running order with transition timing.
+          </p>
         </section>
 
-        <section className="workspace-grid">
-          <aside className="workspace-sidebar panel-chrome">
-            <div className="sidebar-section">
-              <div className="section-heading stacked-heading compact-heading">
-                <div>
-                  <p className="eyebrow">Mix setup</p>
-                  <h2>Composer</h2>
-                </div>
+        <section className="content-grid">
+          <section className="panel create-panel">
+            <div className="section-heading block-heading">
+              <div>
+                <p className="eyebrow">Create New Mix</p>
+                <h2>Build the set</h2>
               </div>
+            </div>
 
+            <div className="form-stack">
               <label>
                 <span>Mix title</span>
-                <input value={mixTitle} onChange={(event) => setMixTitle(event.target.value)} placeholder="Warehouse opener" />
+                <input value={mixTitle} onChange={(event) => setMixTitle(event.target.value)} placeholder="Late rooftop set" />
               </label>
 
               <label>
@@ -160,181 +230,173 @@ function App() {
                   placeholder="Optional"
                 />
               </label>
-            </div>
 
-            <div className="sidebar-section">
-              <div className="section-heading stacked-heading compact-heading">
-                <div>
-                  <p className="eyebrow">Mood</p>
-                  <h3>Vibe</h3>
-                </div>
-              </div>
-              <div className="vibe-grid-simple">
-                {vibeOptions.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={option === vibe ? 'vibe-chip active' : 'vibe-chip'}
-                    onClick={() => setVibe(option)}
-                  >
-                    {option}
+              <div className="form-section">
+                <div className="section-heading compact-row">
+                  <span>Add songs</span>
+                  <button type="button" className="plus-button" onClick={addSongRow}>
+                    +
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            <div className="sidebar-section">
-              <div className="section-heading stacked-heading compact-heading">
-                <div>
-                  <p className="eyebrow">Ingest</p>
-                  <h3>Add sources</h3>
+                <div className="song-list">
+                  {songRows.map((row, index) => (
+                    <div key={row.id} className="song-row">
+                      <input
+                        value={row.value}
+                        onChange={(event) => updateSongRow(row.id, (current) => ({ ...current, value: event.target.value }))}
+                        placeholder={`Song ${index + 1}: paste YouTube, Spotify, or SoundCloud link`}
+                      />
+                      <label className="file-button">
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          onChange={(event) =>
+                            updateSongRow(row.id, (current) => ({
+                              ...current,
+                              file: event.target.files?.[0] ?? null,
+                            }))
+                          }
+                        />
+                        <span>{row.file ? 'Audio selected' : 'Upload'}</span>
+                      </label>
+                      <button type="button" className="row-remove" onClick={() => removeSongRow(row.id)}>
+                        Remove
+                      </button>
+                      {row.file ? <p className="row-meta">{row.file.name}</p> : null}
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <label className="upload-dropzone">
-                <input type="file" accept="audio/*" multiple onChange={handleFileUpload} />
-                <strong>Upload local audio</strong>
-                <small>Browser-decoded and analyzed second by second for real transition points.</small>
-              </label>
-
-              <div className="link-row">
-                <input
-                  value={linkInput}
-                  onChange={(event) => setLinkInput(event.target.value)}
-                  placeholder="Paste YouTube, Spotify, or SoundCloud link"
-                />
-                <button type="button" onClick={handleAddLink}>
-                  Add
-                </button>
+              <div className="form-section">
+                <span>Choose vibe</span>
+                <div className="vibe-grid-simple">
+                  {vibeOptions.map((vibe) => (
+                    <button
+                      key={vibe}
+                      type="button"
+                      className={selectedVibes.includes(vibe) ? 'vibe-chip active' : 'vibe-chip'}
+                      onClick={() => toggleVibe(vibe)}
+                    >
+                      {vibe}
+                    </button>
+                  ))}
+                </div>
+                <p className="summary-note">
+                  Multiple vibes can be selected. The mix engine blends them into the nearest matching profile.
+                </p>
               </div>
-              <p className="summary-note">{estimatedTracks > 0 ? `${estimatedTracks} link sources are using estimate mode.` : 'Uploads get full local analysis.'}</p>
+
+              <button type="button" className="generate-button" onClick={handleCreateMix} disabled={isCreatingMix}>
+                {isCreatingMix ? 'Creating mix...' : 'Create new mix'}
+              </button>
+
               {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
             </div>
-          </aside>
+          </section>
 
-          <section className="workspace-main">
-            <section className="panel-chrome library-panel">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Library</p>
-                  <h2>Source tracks</h2>
+          <section className="panel library-panel">
+            <div className="section-heading block-heading">
+              <div>
+                <p className="eyebrow">Library</p>
+                <h2>My mixes and my tracks</h2>
+              </div>
+            </div>
+
+            <div className="library-grid">
+              <div className="library-column">
+                <h3>My mixes</h3>
+                <div className="library-list">
+                  {myMixes.length === 0 ? (
+                    <div className="empty-card">Created mixes will appear here.</div>
+                  ) : (
+                    myMixes.map((mix) => (
+                      <article key={mix.id} className="library-card">
+                        <p className="track-title">{mix.title}</p>
+                        <p className="track-note">{mix.createdAt}</p>
+                        <p className="track-note">Vibes: {mix.selectedVibes.join(', ')}</p>
+                        <p className="track-note">Runtime: {formatSeconds(mix.plan.totalDurationSeconds)}</p>
+                      </article>
+                    ))
+                  )}
                 </div>
-                <p>{tracks.length} total</p>
               </div>
 
-              <div className="track-grid">
-                {tracks.length === 0 ? (
-                  <div className="empty-card">Add songs to start building the mix.</div>
-                ) : (
-                  tracks.map((track) => (
-                    <article key={track.id} className="track-card">
+              <div className="library-column">
+                <h3>My tracks</h3>
+                <div className="library-list">
+                  {tracks.length === 0 ? (
+                    <div className="empty-card">Analyzed tracks will appear here.</div>
+                  ) : (
+                    tracks.map((track) => (
+                      <article key={track.id} className="library-card">
+                        <div className="track-topline">
+                          <p className="track-title">{track.title}</p>
+                          <span className="status-pill" data-state={track.analysisStatus}>
+                            {track.analysisStatus}
+                          </span>
+                        </div>
+                        {track.analysis ? (
+                          <>
+                            <p className="track-note">
+                              {track.analysis.bpm} BPM · {track.analysis.key} · {formatSeconds(track.analysis.durationSeconds)}
+                            </p>
+                            <MiniWave slices={track.analysis.slices} />
+                          </>
+                        ) : null}
+                      </article>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section className="panel plan-panel">
+          <div className="section-heading block-heading">
+            <div>
+              <p className="eyebrow">Latest Mix</p>
+              <h2>{mixPlan?.title ?? 'No mix created yet'}</h2>
+            </div>
+            {mixPlan ? <p>{formatSeconds(mixPlan.totalDurationSeconds)}</p> : null}
+          </div>
+
+          {mixPlan ? (
+            <>
+              <p className="plan-summary">{mixPlan.summary}</p>
+              {mixPlan.warnings.map((warning) => (
+                <p key={warning} className="warning-banner">
+                  {warning}
+                </p>
+              ))}
+              <div className="plan-track-list">
+                {mixPlan.tracks.map((track, index) => (
+                  <article key={track.trackId} className="plan-track-card">
+                    <div className="plan-track-index">{String(index + 1).padStart(2, '0')}</div>
+                    <div className="plan-track-body">
                       <div className="track-topline">
                         <div>
                           <p className="track-title">{track.title}</p>
                           <p className="track-source">
-                            {track.source.kind === 'upload' ? 'Local upload' : track.source.provider}
+                            {track.provider} · {track.bpm} BPM · {track.key}
                           </p>
                         </div>
-                        <button type="button" className="ghost-button" onClick={() => removeTrack(track.id)}>
-                          Remove
-                        </button>
+                        <p className="plan-duration">{formatSeconds(track.playDurationSeconds)}</p>
                       </div>
-
-                      <div className="status-pill" data-state={track.analysisStatus}>
-                        {track.analysisStatus}
-                      </div>
-
-                      {track.analysis ? (
-                        <>
-                          <div className="metric-row metric-row-tight">
-                            <span>{track.analysis.bpm} BPM</span>
-                            <span>{track.analysis.key}</span>
-                            <span>{formatSeconds(track.analysis.durationSeconds)}</span>
-                          </div>
-                          <MiniWave slices={track.analysis.slices} />
-                          <div className="metric-row muted-row">
-                            <span>Intro {formatSeconds(track.analysis.introSecond)}</span>
-                            <span>Outro {formatSeconds(track.analysis.outroSecond)}</span>
-                          </div>
-                        </>
-                      ) : null}
-
-                      {track.notes?.length ? <p className="track-note">{track.notes.join(' ')}</p> : null}
-                    </article>
-                  ))
-                )}
+                      <p className="track-note">EQ: {track.eqProfile}</p>
+                      <p className="track-note">
+                        Play window: {formatSeconds(track.startOffsetSeconds)} to {formatSeconds(track.endOffsetSeconds)}
+                      </p>
+                    </div>
+                  </article>
+                ))}
               </div>
-            </section>
-
-            <section className="panel-chrome plan-panel">
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Mix plan</p>
-                  <h2>{mixPlan?.title ?? 'No mix generated yet'}</h2>
-                </div>
-                {mixPlan ? <p>{formatSeconds(mixPlan.totalDurationSeconds)}</p> : null}
-              </div>
-
-              {mixPlan ? (
-                <>
-                  <p className="plan-summary">{mixPlan.summary}</p>
-                  {mixPlan.warnings.map((warning) => (
-                    <p key={warning} className="warning-banner">
-                      {warning}
-                    </p>
-                  ))}
-
-                  <div className="timeline-ribbon">
-                    {mixPlan.tracks.map((track) => (
-                      <div
-                        key={track.trackId}
-                        className="timeline-segment"
-                        style={{ flexGrow: Math.max(1, track.playDurationSeconds) }}
-                      >
-                        <span>{track.title}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="plan-track-list">
-                    {mixPlan.tracks.map((track, index) => (
-                      <article key={track.trackId} className="plan-track-card">
-                        <div className="plan-track-index">{String(index + 1).padStart(2, '0')}</div>
-                        <div className="plan-track-body">
-                          <div className="track-topline">
-                            <div>
-                              <p className="track-title">{track.title}</p>
-                              <p className="track-source">
-                                {track.provider} · {track.bpm} BPM · {track.key}
-                              </p>
-                            </div>
-                            <p className="plan-duration">{formatSeconds(track.playDurationSeconds)}</p>
-                          </div>
-
-                          <p className="track-note">EQ: {track.eqProfile}</p>
-                          <p className="track-note">
-                            Play window: {formatSeconds(track.startOffsetSeconds)} to {formatSeconds(track.endOffsetSeconds)}
-                          </p>
-                          {track.transitionIn ? (
-                            <p className="track-note">
-                              Transition in: {track.transitionIn.style} for {track.transitionIn.lengthSeconds}s at {formatSeconds(track.transitionIn.fromSecond)}. {track.transitionIn.reason}
-                            </p>
-                          ) : null}
-                          {track.transitionOut ? (
-                            <p className="track-note">
-                              Transition out: {track.transitionOut.style} from {formatSeconds(track.transitionOut.fromSecond)} to {formatSeconds(track.transitionOut.toSecond)}. {track.transitionOut.reason}
-                            </p>
-                          ) : null}
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="empty-card">Generate a mix to see the ordered set, trims, and transitions.</div>
-              )}
-            </section>
-          </section>
+            </>
+          ) : (
+            <div className="empty-card">Create a new mix to see the generated running order.</div>
+          )}
         </section>
       </main>
     </div>
@@ -342,7 +404,7 @@ function App() {
 }
 
 function MiniWave({ slices }: { slices: Array<{ second: number; energy: number; brightness: number }> }) {
-  const sampleSize = 28;
+  const sampleSize = 24;
   const stride = Math.max(1, Math.floor(slices.length / sampleSize));
   const bars = slices.filter((_, index) => index % stride === 0).slice(0, sampleSize);
 
@@ -353,7 +415,7 @@ function MiniWave({ slices }: { slices: Array<{ second: number; energy: number; 
           key={slice.second}
           className="mini-wave-bar"
           style={{
-            height: `${18 + slice.energy * 52}px`,
+            height: `${16 + slice.energy * 44}px`,
             opacity: `${0.45 + slice.brightness * 0.55}`,
           }}
         />
