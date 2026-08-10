@@ -292,12 +292,15 @@ function App() {
     <div className="page-shell">
       <div className="ambient ambient-left" />
       <div className="ambient ambient-right" />
+      <div className="ambient ambient-bottom" />
 
       <nav className="topnav">
         <span className="topnav-logo">mixR</span>
         <div className="topnav-links">
-          <button type="button" className={view === 'home'    ? 'topnav-btn active' : 'topnav-btn'} onClick={() => setView('home')}>Home</button>
-          <button type="button" className={view === 'library' ? 'topnav-btn active' : 'topnav-btn'} onClick={() => setView('library')}>Library</button>
+          {view === 'library' && (
+            <button type="button" className="topnav-btn" onClick={() => setView('home')}>← Home</button>
+          )}
+          <button type="button" className={view === 'library' ? 'topnav-lib-btn active' : 'topnav-lib-btn'} onClick={() => setView('library')}>Library</button>
         </div>
       </nav>
 
@@ -307,17 +310,13 @@ function App() {
         ) : (
           <>
             <section className="hero-block">
-              <p className="eyebrow">mixR</p>
-              <h1>Create polished DJ mixes from your tracks.</h1>
-              <p className="hero-copy">
-                Build a new mix from uploads or links, combine multiple vibe presets, and get a clean running order with transition timing.
-              </p>
+              <h1 className="hero-logo">MixR</h1>
+              <p className="hero-tagline">Create polished DJ mixes from your tracks.</p>
             </section>
 
             <section className="panel create-panel">
               <div className="section-heading block-heading">
                 <div>
-                  <p className="eyebrow">Create New Mix</p>
                   <h2>Build the set</h2>
                 </div>
               </div>
@@ -344,7 +343,7 @@ function App() {
                         <input
                           value={row.value}
                           onChange={(e) => updateSongRow(row.id, (r) => ({ ...r, value: e.target.value }))}
-                          placeholder={`Song ${index + 1}: paste YouTube, Spotify, or SoundCloud link`}
+                          placeholder={`Song ${index + 1}: paste a link or upload a file →`}
                         />
                         <label className="file-button">
                           <input type="file" accept="audio/*" onChange={(e) => updateSongRow(row.id, (r) => ({ ...r, file: e.target.files?.[0] ?? null }))} />
