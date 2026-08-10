@@ -295,12 +295,15 @@ function App() {
       <div className="ambient ambient-bottom" />
 
       <nav className="topnav">
-        <span className="topnav-logo">mixR</span>
-        <div className="topnav-links">
+        <div className="topnav-left">
           {view === 'library' && (
             <button type="button" className="topnav-btn" onClick={() => setView('home')}>← Home</button>
           )}
+        </div>
+        <span className="topnav-logo">MixR</span>
+        <div className="topnav-right">
           <button type="button" className={view === 'library' ? 'topnav-lib-btn active' : 'topnav-lib-btn'} onClick={() => setView('library')}>Library</button>
+          <button type="button" className="theme-toggle" onClick={() => document.documentElement.toggleAttribute('data-light')} aria-label="Toggle light/dark mode">◐</button>
         </div>
       </nav>
 
