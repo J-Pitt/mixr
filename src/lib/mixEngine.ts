@@ -19,17 +19,48 @@ const vibeProfiles: Record<
     order: 'lift' | 'cruise' | 'peak' | 'dark' | 'moody';
   }
 > = {
+  // ── Time of day ────────────────────────────────────────────────────────────
   'Warm Up': {
     eq: 'Ease the sub slightly, keep mids open, add a gentle high lift as the set climbs.',
     transitionStyle: 'long blend',
     transitionRange: [10, 14],
     order: 'lift',
   },
+  'Sunrise': {
+    eq: 'Soft sub, airy highs, minimal mid presence — let the room breathe.',
+    transitionStyle: 'gentle dissolve',
+    transitionRange: [12, 16],
+    order: 'lift',
+  },
+  'Morning Coffee': {
+    eq: 'Warm low-mids, light sparkle, restrained sub — intimate and clean.',
+    transitionStyle: 'slow crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  'Midday Drive': {
+    eq: 'Punchy lows, presence boost around 3 kHz, a slight high-shelf lift.',
+    transitionStyle: 'smooth handoff',
+    transitionRange: [8, 12],
+    order: 'cruise',
+  },
+  'Golden Hour': {
+    eq: 'Warm, rich low-mids, softened highs, gentle presence — cinematic feel.',
+    transitionStyle: 'silky crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
   'Sunset Cruise': {
     eq: 'Keep the low mids warm, soften the top end, and let vocals sit forward.',
     transitionStyle: 'silky crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+  },
+  'Blue Hour': {
+    eq: 'Deepen the sub, reduce upper-mid harshness, keep highs hazy.',
+    transitionStyle: 'slow fade-in',
+    transitionRange: [10, 14],
+    order: 'dark',
   },
   'Peak Time': {
     eq: 'Tighten the lows, push presence around the mids, and keep the highs crisp.',
@@ -48,6 +79,189 @@ const vibeProfiles: Record<
     transitionStyle: 'patient fade',
     transitionRange: [8, 12],
     order: 'moody',
+  },
+  'Deep Night': {
+    eq: 'Full sub extension, roll off above 8 kHz, mono-compatible low-end.',
+    transitionStyle: 'dark dissolve',
+    transitionRange: [10, 14],
+    order: 'moody',
+  },
+  // ── Season & outdoors ───────────────────────────────────────────────────────
+  'Spring Bloom': {
+    eq: 'Bright, airy highs, light sub, forward mids — optimistic and open.',
+    transitionStyle: 'breezy crossfade',
+    transitionRange: [10, 14],
+    order: 'lift',
+  },
+  'Summer Heat': {
+    eq: 'Deep sub, scooped mids, sizzling highs — wide and energetic.',
+    transitionStyle: 'quick energy handoff',
+    transitionRange: [6, 10],
+    order: 'peak',
+  },
+  'Festival': {
+    eq: 'Maximum sub extension, pushed presence, crisp air — built for outdoor PA.',
+    transitionStyle: 'hard cut',
+    transitionRange: [4, 8],
+    order: 'peak',
+  },
+  'Beach Party': {
+    eq: 'Bright, percussive highs, light sub, forward rhythm — fun and loose.',
+    transitionStyle: 'sunny blend',
+    transitionRange: [8, 12],
+    order: 'cruise',
+  },
+  'Poolside': {
+    eq: 'Warm mids, soft sub, gentle high shelf — relaxed and spacious.',
+    transitionStyle: 'slow crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  'Autumn Rain': {
+    eq: 'Rolled-off highs, warm mids, modest sub — intimate and reflective.',
+    transitionStyle: 'melancholy fade',
+    transitionRange: [10, 14],
+    order: 'moody',
+  },
+  'Winter Chill': {
+    eq: 'Crystalline highs, thin sub, cool upper-mids — sparse and clear.',
+    transitionStyle: 'slow dissolve',
+    transitionRange: [12, 16],
+    order: 'dark',
+  },
+  'Cozy Cabin': {
+    eq: 'Warm low-mids, reduced harsh frequencies, intimate reverb character.',
+    transitionStyle: 'gentle crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  // ── Genre & sound ───────────────────────────────────────────────────────────
+  'House': {
+    eq: 'Four-on-the-floor punch, 200 Hz warmth, gentle high-hat sizzle.',
+    transitionStyle: 'phrase-locked blend',
+    transitionRange: [8, 12],
+    order: 'lift',
+  },
+  'Techno': {
+    eq: 'Tight sub, scooped low-mids, industrial high presence, mono bass.',
+    transitionStyle: 'hard cut',
+    transitionRange: [4, 8],
+    order: 'peak',
+  },
+  'Ambient': {
+    eq: 'Rolled-off lows, spacious mids, shimmer in the highs — minimal attack.',
+    transitionStyle: 'long dissolve',
+    transitionRange: [14, 20],
+    order: 'moody',
+  },
+  'Hip-Hop': {
+    eq: 'Deep sub, punchy low-mid snap, presence on the vocal range.',
+    transitionStyle: 'bar-locked cut',
+    transitionRange: [6, 10],
+    order: 'cruise',
+  },
+  'R&B': {
+    eq: 'Warm sub, forward vocals at 2–4 kHz, gentle high-shelf smoothness.',
+    transitionStyle: 'silky blend',
+    transitionRange: [8, 12],
+    order: 'cruise',
+  },
+  'Afrobeats': {
+    eq: 'Punchy mid-bass, bright percussion, forward mid presence, wide stereo.',
+    transitionStyle: 'rhythmic handoff',
+    transitionRange: [6, 10],
+    order: 'lift',
+  },
+  'Latin': {
+    eq: 'Lively percussion highs, warm guitar mids, punchy but not heavy bass.',
+    transitionStyle: 'rhythmic blend',
+    transitionRange: [6, 10],
+    order: 'lift',
+  },
+  'Reggae': {
+    eq: 'Deep bass, scooped upper-mids, laid-back attack — roots and dub.',
+    transitionStyle: 'dub fade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  'Jazz': {
+    eq: 'Natural mids, warm brush presence, gentle sub, no harshness in the highs.',
+    transitionStyle: 'conversational blend',
+    transitionRange: [8, 12],
+    order: 'moody',
+  },
+  'Soul': {
+    eq: 'Warm body, forward vocal mids, cushioned low end, organic feel.',
+    transitionStyle: 'warm crossfade',
+    transitionRange: [8, 12],
+    order: 'cruise',
+  },
+  'Funk': {
+    eq: 'Snappy attack, forward rhythm guitar range, punchy bass, lively highs.',
+    transitionStyle: 'groove handoff',
+    transitionRange: [6, 10],
+    order: 'lift',
+  },
+  'Drum & Bass': {
+    eq: 'Ultra-tight sub, aggressive mids, hyper-detailed high-end, maximum clarity.',
+    transitionStyle: 'stepper cut',
+    transitionRange: [4, 8],
+    order: 'peak',
+  },
+  'Trance': {
+    eq: 'Lifted highs, punchy kick sub, open mids — euphoric and wide.',
+    transitionStyle: 'energy ramp',
+    transitionRange: [8, 12],
+    order: 'lift',
+  },
+  // ── Mood & energy ───────────────────────────────────────────────────────────
+  'Chill': {
+    eq: 'Low-shelf boost, reduced upper-mids, smooth highs — easy and warm.',
+    transitionStyle: 'soft crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  'Hype': {
+    eq: 'Maximum punch, boosted presence, bright air, tight mono sub.',
+    transitionStyle: 'hard cut',
+    transitionRange: [4, 8],
+    order: 'peak',
+  },
+  'Melancholy': {
+    eq: 'Reduced brightness, forward lower-mids, subtle sub — introspective weight.',
+    transitionStyle: 'slow fade',
+    transitionRange: [12, 16],
+    order: 'moody',
+  },
+  'Euphoric': {
+    eq: 'Lifted highs, open mids, punchy sub — emotional and wide.',
+    transitionStyle: 'uplift blend',
+    transitionRange: [8, 12],
+    order: 'lift',
+  },
+  'Romantic': {
+    eq: 'Warm body, smooth highs, gentle sub, forward vocal presence.',
+    transitionStyle: 'tender crossfade',
+    transitionRange: [10, 14],
+    order: 'cruise',
+  },
+  'Introspective': {
+    eq: 'Recessed highs, soft attack, midrange warmth — space between notes.',
+    transitionStyle: 'patient dissolve',
+    transitionRange: [12, 16],
+    order: 'moody',
+  },
+  'Dark': {
+    eq: 'Scooped mids, heavy sub, rolled-off air — brooding and dense.',
+    transitionStyle: 'dark blend',
+    transitionRange: [8, 12],
+    order: 'dark',
+  },
+  'Uplifting': {
+    eq: 'High-shelf boost, open presence, punchy lows — joyful and bright.',
+    transitionStyle: 'rising blend',
+    transitionRange: [8, 12],
+    order: 'lift',
   },
 };
 

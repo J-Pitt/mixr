@@ -1,11 +1,50 @@
 export type Provider = 'upload' | 'youtube' | 'spotify' | 'soundcloud' | 'unknown';
 
+// Time of day
+// Season & outdoors
+// Genre & sound
+// Mood & energy
 export type Vibe =
   | 'Warm Up'
+  | 'Sunrise'
+  | 'Morning Coffee'
+  | 'Midday Drive'
+  | 'Golden Hour'
   | 'Sunset Cruise'
+  | 'Blue Hour'
   | 'Peak Time'
   | 'Late Night'
-  | 'After Hours';
+  | 'After Hours'
+  | 'Deep Night'
+  | 'Spring Bloom'
+  | 'Summer Heat'
+  | 'Festival'
+  | 'Beach Party'
+  | 'Poolside'
+  | 'Autumn Rain'
+  | 'Winter Chill'
+  | 'Cozy Cabin'
+  | 'House'
+  | 'Techno'
+  | 'Ambient'
+  | 'Hip-Hop'
+  | 'R&B'
+  | 'Afrobeats'
+  | 'Latin'
+  | 'Reggae'
+  | 'Jazz'
+  | 'Soul'
+  | 'Funk'
+  | 'Drum & Bass'
+  | 'Trance'
+  | 'Chill'
+  | 'Hype'
+  | 'Melancholy'
+  | 'Euphoric'
+  | 'Romantic'
+  | 'Introspective'
+  | 'Dark'
+  | 'Uplifting';
 
 export interface EnergySlice {
   second: number;

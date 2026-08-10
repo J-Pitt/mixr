@@ -10,7 +10,26 @@ import {
 } from './lib/mixEngine';
 import type { MixPlan, TrackInput, Vibe } from './types';
 
-const vibeOptions: Vibe[] = ['Warm Up', 'Sunset Cruise', 'Peak Time', 'Late Night', 'After Hours'];
+const vibeGroups: { label: string; vibes: Vibe[] }[] = [
+  {
+    label: 'Time of day',
+    vibes: ['Sunrise', 'Morning Coffee', 'Midday Drive', 'Golden Hour', 'Sunset Cruise', 'Blue Hour', 'Late Night', 'After Hours', 'Deep Night'],
+  },
+  {
+    label: 'Season & outdoors',
+    vibes: ['Spring Bloom', 'Summer Heat', 'Festival', 'Beach Party', 'Poolside', 'Autumn Rain', 'Winter Chill', 'Cozy Cabin'],
+  },
+  {
+    label: 'Genre & sound',
+    vibes: ['House', 'Techno', 'Drum & Bass', 'Trance', 'Hip-Hop', 'R&B', 'Afrobeats', 'Latin', 'Reggae', 'Jazz', 'Soul', 'Funk', 'Ambient'],
+  },
+  {
+    label: 'Mood & energy',
+    vibes: ['Warm Up', 'Peak Time', 'Hype', 'Uplifting', 'Euphoric', 'Chill', 'Romantic', 'Melancholy', 'Introspective', 'Dark'],
+  },
+];
+
+const allVibes: Vibe[] = vibeGroups.flatMap((g) => g.vibes);
 
 interface SongRow {
   id: string;
@@ -26,12 +45,18 @@ interface SavedMix {
   plan: MixPlan;
 }
 
+// Energy scale used to blend multiple vibes into one resolved profile
 const vibeScale: Record<Vibe, number> = {
-  'Warm Up': 1,
-  'Sunset Cruise': 2,
-  'Late Night': 3,
-  'After Hours': 4,
-  'Peak Time': 5,
+  'Ambient': 1, 'Introspective': 1, 'Melancholy': 1, 'Deep Night': 1, 'Winter Chill': 1,
+  'Sunrise': 2, 'Morning Coffee': 2, 'Cozy Cabin': 2, 'Autumn Rain': 2, 'Jazz': 2,
+  'Warm Up': 2, 'Chill': 2, 'Reggae': 2,
+  'Sunset Cruise': 3, 'Golden Hour': 3, 'Blue Hour': 3, 'Poolside': 3, 'Romantic': 3,
+  'Soul': 3, 'R&B': 3, 'Midday Drive': 3, 'Hip-Hop': 3, 'Funk': 3,
+  'Late Night': 3, 'After Hours': 3, 'Dark': 3,
+  'Spring Bloom': 4, 'Beach Party': 4, 'House': 4, 'Afrobeats': 4, 'Latin': 4,
+  'Trance': 4, 'Uplifting': 4, 'Euphoric': 4,
+  'Summer Heat': 5, 'Peak Time': 5, 'Techno': 5, 'Drum & Bass': 5,
+  'Festival': 5, 'Hype': 5,
 };
 
 function App() {
@@ -117,11 +142,11 @@ function App() {
     }
 
     const average = vibes.reduce((total, vibe) => total + vibeScale[vibe], 0) / vibes.length;
-    return vibeOptions.reduce((closest, vibe) => {
+    return allVibes.reduce((closest, vibe) => {
       const currentDistance = Math.abs(vibeScale[vibe] - average);
       const closestDistance = Math.abs(vibeScale[closest] - average);
       return currentDistance < closestDistance ? vibe : closest;
-    }, vibeOptions[0]);
+    }, allVibes[0]);
   };
 
   const buildTracksFromRows = () => {
@@ -271,20 +296,27 @@ function App() {
 
               <div className="form-section">
                 <span>Choose vibe</span>
-                <div className="vibe-grid-simple">
-                  {vibeOptions.map((vibe) => (
-                    <button
-                      key={vibe}
-                      type="button"
-                      className={selectedVibes.includes(vibe) ? 'vibe-chip active' : 'vibe-chip'}
-                      onClick={() => toggleVibe(vibe)}
-                    >
-                      {vibe}
-                    </button>
+                <div className="vibe-groups">
+                  {vibeGroups.map((group) => (
+                    <div key={group.label} className="vibe-group">
+                      <p className="vibe-group-label">{group.label}</p>
+                      <div className="vibe-grid-simple">
+                        {group.vibes.map((vibe) => (
+                          <button
+                            key={vibe}
+                            type="button"
+                            className={selectedVibes.includes(vibe) ? 'vibe-chip active' : 'vibe-chip'}
+                            onClick={() => toggleVibe(vibe)}
+                          >
+                            {vibe}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
                 <p className="summary-note">
-                  Multiple vibes can be selected. The mix engine blends them into the nearest matching profile.
+                  Pick as many as you like. The engine blends them into a single profile for sequencing and EQ.
                 </p>
               </div>
 
