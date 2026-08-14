@@ -1,4 +1,7 @@
-export type Provider = 'upload' | 'youtube' | 'spotify' | 'soundcloud' | 'unknown';
+export type Provider = 'local' | 'youtube' | 'spotify' | 'soundcloud' | 'unknown';
+
+/** Which service a typed query is searched against. */
+export type SearchProvider = 'youtube' | 'soundcloud';
 
 // Time of day
 // Season & outdoors
@@ -57,38 +60,72 @@ export interface TrackAnalysis {
   durationSeconds: number;
   usableDurationSeconds: number;
   bpm: number;
+  /** 0..1. Low values mean the tempo estimate is a guess, so the UI can say so. */
+  bpmConfidence: number;
+  /** Phase of the first beat, so play windows can snap to the grid. */
+  beatOffsetSeconds: number;
   key: string;
+  /** 0..1 correlation strength of the winning key profile. */
+  keyConfidence: number;
   averageEnergy: number;
   averageBrightness: number;
   introSecond: number;
   outroSecond: number;
   transitionMoments: number[];
   slices: EnergySlice[];
-  isEstimated: boolean;
 }
 
-export type TrackSource =
-  | {
-      kind: 'upload';
-      file: File;
-    }
-  | {
-      kind: 'link';
-      url: string;
-      provider: Provider;
-    };
+export interface LoudnessMeasurement {
+  integratedLufs: number;
+  truePeakDb: number;
+  loudnessRange: number;
+}
 
-export type AnalysisStatus = 'pending' | 'analyzing' | 'ready' | 'fallback' | 'error';
+/** What the client asks the server to ingest. */
+export type TrackRequest =
+  | { kind: 'query'; query: string; provider: SearchProvider }
+  | { kind: 'link'; url: string }
+  | { kind: 'local'; path: string };
 
+export interface SearchResult {
+  sourceId: string;
+  title: string;
+  artist?: string;
+  durationSeconds?: number;
+  thumbnail?: string;
+  webpageUrl: string;
+  provider: Provider;
+}
+
+/** A track that has been downloaded, transcoded, and analyzed. */
+export interface IngestedTrack {
+  id: string;
+  title: string;
+  artist?: string;
+  provider: Provider;
+  /** Original link, when the track came from a streaming service. */
+  sourceUrl?: string;
+  /** Original file, when the track came from disk. */
+  sourcePath?: string;
+  /** Filename of the canonical FLAC inside the media directory. */
+  mediaFile: string;
+  /** Size of the canonical FLAC, so the library can report disk usage. */
+  sizeBytes: number;
+  thumbnail?: string;
+  analysis: TrackAnalysis;
+  loudness: LoudnessMeasurement;
+  addedAt: string;
+  plays: number;
+}
+
+/** The planning engine only needs identity, analysis, and measured level. */
 export interface TrackInput {
   id: string;
   title: string;
   artist?: string;
-  source: TrackSource;
-  durationHintSeconds?: number;
-  analysisStatus: AnalysisStatus;
-  analysis?: TrackAnalysis;
-  notes?: string[];
+  provider: Provider;
+  analysis: TrackAnalysis;
+  loudness?: LoudnessMeasurement;
 }
 
 export interface MixTransition {
@@ -102,6 +139,7 @@ export interface MixTransition {
 export interface MixPlanTrack {
   trackId: string;
   title: string;
+  artist?: string;
   provider: Provider;
   bpm: number;
   key: string;
@@ -109,6 +147,12 @@ export interface MixPlanTrack {
   startOffsetSeconds: number;
   endOffsetSeconds: number;
   eqProfile: string;
+  /** Gain applied so every track sits at the same perceived loudness. */
+  gainDb?: number;
+  /** Where this track starts inside the finished mix. */
+  mixStartSeconds?: number;
+  /** Downsampled energy across the play window, for drawing the timeline. */
+  energyPreview: number[];
   transitionIn?: MixTransition;
   transitionOut?: MixTransition;
   notes: string[];
@@ -122,4 +166,43 @@ export interface MixPlan {
   tracks: MixPlanTrack[];
   summary: string;
   warnings: string[];
+}
+
+export type RenderStage = 'queued' | 'resolving' | 'downloading' | 'analyzing' | 'planning' | 'rendering' | 'done' | 'error';
+
+export interface RenderProgress {
+  jobId: string;
+  stage: RenderStage;
+  /** 0..1 across the whole job. */
+  progress: number;
+  message: string;
+  /** Per-track status lines, in submission order. */
+  tracks: { label: string; status: 'pending' | 'working' | 'ready' | 'error'; detail?: string }[];
+  plan?: MixPlan;
+  mix?: MixRecord;
+  error?: string;
+}
+
+/** A finished mix on disk. */
+export interface MixRecord {
+  id: string;
+  title: string;
+  vibes: Vibe[];
+  plan: MixPlan;
+  /** Filename inside the renders directory. */
+  file: string;
+  durationSeconds: number;
+  sizeBytes: number;
+  createdAt: string;
+  plays: number;
+}
+
+export interface LibrarySnapshot {
+  mixes: MixRecord[];
+  tracks: IngestedTrack[];
+}
+
+export interface ToolStatus {
+  ffmpeg: { ready: boolean; version?: string; error?: string };
+  ytdlp: { ready: boolean; version?: string; error?: string };
 }

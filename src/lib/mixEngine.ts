@@ -1,90 +1,99 @@
-import type {
-  EnergySlice,
-  MixPlan,
-  MixPlanTrack,
-  Provider,
-  TrackAnalysis,
-  TrackInput,
-  Vibe,
-} from '../types';
+// The .js extension keeps this file importable by the Node server (NodeNext)
+// as well as by Vite, since it is shared between both.
+import type { MixPlan, MixPlanTrack, TrackAnalysis, TrackInput, Vibe } from '../types.js';
 
-const KEYS = ['Am', 'C', 'G', 'Dm', 'Em', 'F', 'Bm', 'A', 'D', 'E', 'Bb', 'Fm'];
+/**
+ * Tonal archetype for a vibe. Each maps to a small, gentle ffmpeg EQ chain so
+ * the written guidance and the rendered audio cannot drift apart.
+ */
+export type Tone = 'natural' | 'warm' | 'bright' | 'deep' | 'tight' | 'airy';
 
-const vibeProfiles: Record<
-  Vibe,
-  {
-    eq: string;
-    transitionStyle: string;
-    transitionRange: [number, number];
-    order: 'lift' | 'cruise' | 'peak' | 'dark' | 'moody';
-  }
-> = {
+export interface VibeProfile {
+  eq: string;
+  transitionStyle: string;
+  transitionRange: [number, number];
+  order: 'lift' | 'cruise' | 'peak' | 'dark' | 'moody';
+  tone: Tone;
+}
+
+export const vibeProfiles: Record<Vibe, VibeProfile> = {
   // ── Time of day ────────────────────────────────────────────────────────────
   'Warm Up': {
     eq: 'Ease the sub slightly, keep mids open, add a gentle high lift as the set climbs.',
     transitionStyle: 'long blend',
     transitionRange: [10, 14],
     order: 'lift',
+    tone: 'natural',
   },
   'Sunrise': {
     eq: 'Soft sub, airy highs, minimal mid presence — let the room breathe.',
     transitionStyle: 'gentle dissolve',
     transitionRange: [12, 16],
     order: 'lift',
+    tone: 'airy',
   },
   'Morning Coffee': {
     eq: 'Warm low-mids, light sparkle, restrained sub — intimate and clean.',
     transitionStyle: 'slow crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Midday Drive': {
     eq: 'Punchy lows, presence boost around 3 kHz, a slight high-shelf lift.',
     transitionStyle: 'smooth handoff',
     transitionRange: [8, 12],
     order: 'cruise',
+    tone: 'tight',
   },
   'Golden Hour': {
     eq: 'Warm, rich low-mids, softened highs, gentle presence — cinematic feel.',
     transitionStyle: 'silky crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Sunset Cruise': {
     eq: 'Keep the low mids warm, soften the top end, and let vocals sit forward.',
     transitionStyle: 'silky crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Blue Hour': {
     eq: 'Deepen the sub, reduce upper-mid harshness, keep highs hazy.',
     transitionStyle: 'slow fade-in',
     transitionRange: [10, 14],
     order: 'dark',
+    tone: 'deep',
   },
   'Peak Time': {
     eq: 'Tighten the lows, push presence around the mids, and keep the highs crisp.',
     transitionStyle: 'quick energy handoff',
     transitionRange: [6, 10],
     order: 'peak',
+    tone: 'tight',
   },
   'Late Night': {
     eq: 'Roll off some sparkle, lean into sub weight, and keep the center image focused.',
     transitionStyle: 'smoked blend',
     transitionRange: [8, 12],
     order: 'dark',
+    tone: 'deep',
   },
   'After Hours': {
     eq: 'Tuck the mids, deepen the low bed, and keep the highs restrained.',
     transitionStyle: 'patient fade',
     transitionRange: [8, 12],
     order: 'moody',
+    tone: 'deep',
   },
   'Deep Night': {
     eq: 'Full sub extension, roll off above 8 kHz, mono-compatible low-end.',
     transitionStyle: 'dark dissolve',
     transitionRange: [10, 14],
     order: 'moody',
+    tone: 'deep',
   },
   // ── Season & outdoors ───────────────────────────────────────────────────────
   'Spring Bloom': {
@@ -92,48 +101,56 @@ const vibeProfiles: Record<
     transitionStyle: 'breezy crossfade',
     transitionRange: [10, 14],
     order: 'lift',
+    tone: 'airy',
   },
   'Summer Heat': {
     eq: 'Deep sub, scooped mids, sizzling highs — wide and energetic.',
     transitionStyle: 'quick energy handoff',
     transitionRange: [6, 10],
     order: 'peak',
+    tone: 'bright',
   },
   'Festival': {
     eq: 'Maximum sub extension, pushed presence, crisp air — built for outdoor PA.',
     transitionStyle: 'hard cut',
     transitionRange: [4, 8],
     order: 'peak',
+    tone: 'bright',
   },
   'Beach Party': {
     eq: 'Bright, percussive highs, light sub, forward rhythm — fun and loose.',
     transitionStyle: 'sunny blend',
     transitionRange: [8, 12],
     order: 'cruise',
+    tone: 'bright',
   },
   'Poolside': {
     eq: 'Warm mids, soft sub, gentle high shelf — relaxed and spacious.',
     transitionStyle: 'slow crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Autumn Rain': {
     eq: 'Rolled-off highs, warm mids, modest sub — intimate and reflective.',
     transitionStyle: 'melancholy fade',
     transitionRange: [10, 14],
     order: 'moody',
+    tone: 'warm',
   },
   'Winter Chill': {
     eq: 'Crystalline highs, thin sub, cool upper-mids — sparse and clear.',
     transitionStyle: 'slow dissolve',
     transitionRange: [12, 16],
     order: 'dark',
+    tone: 'airy',
   },
   'Cozy Cabin': {
     eq: 'Warm low-mids, reduced harsh frequencies, intimate reverb character.',
     transitionStyle: 'gentle crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   // ── Genre & sound ───────────────────────────────────────────────────────────
   'House': {
@@ -141,78 +158,91 @@ const vibeProfiles: Record<
     transitionStyle: 'phrase-locked blend',
     transitionRange: [8, 12],
     order: 'lift',
+    tone: 'tight',
   },
   'Techno': {
     eq: 'Tight sub, scooped low-mids, industrial high presence, mono bass.',
     transitionStyle: 'hard cut',
     transitionRange: [4, 8],
     order: 'peak',
+    tone: 'tight',
   },
   'Ambient': {
     eq: 'Rolled-off lows, spacious mids, shimmer in the highs — minimal attack.',
     transitionStyle: 'long dissolve',
     transitionRange: [14, 20],
     order: 'moody',
+    tone: 'airy',
   },
   'Hip-Hop': {
     eq: 'Deep sub, punchy low-mid snap, presence on the vocal range.',
     transitionStyle: 'bar-locked cut',
     transitionRange: [6, 10],
     order: 'cruise',
+    tone: 'deep',
   },
   'R&B': {
     eq: 'Warm sub, forward vocals at 2–4 kHz, gentle high-shelf smoothness.',
     transitionStyle: 'silky blend',
     transitionRange: [8, 12],
     order: 'cruise',
+    tone: 'warm',
   },
   'Afrobeats': {
     eq: 'Punchy mid-bass, bright percussion, forward mid presence, wide stereo.',
     transitionStyle: 'rhythmic handoff',
     transitionRange: [6, 10],
     order: 'lift',
+    tone: 'bright',
   },
   'Latin': {
     eq: 'Lively percussion highs, warm guitar mids, punchy but not heavy bass.',
     transitionStyle: 'rhythmic blend',
     transitionRange: [6, 10],
     order: 'lift',
+    tone: 'bright',
   },
   'Reggae': {
     eq: 'Deep bass, scooped upper-mids, laid-back attack — roots and dub.',
     transitionStyle: 'dub fade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'deep',
   },
   'Jazz': {
     eq: 'Natural mids, warm brush presence, gentle sub, no harshness in the highs.',
     transitionStyle: 'conversational blend',
     transitionRange: [8, 12],
     order: 'moody',
+    tone: 'natural',
   },
   'Soul': {
     eq: 'Warm body, forward vocal mids, cushioned low end, organic feel.',
     transitionStyle: 'warm crossfade',
     transitionRange: [8, 12],
     order: 'cruise',
+    tone: 'warm',
   },
   'Funk': {
     eq: 'Snappy attack, forward rhythm guitar range, punchy bass, lively highs.',
     transitionStyle: 'groove handoff',
     transitionRange: [6, 10],
     order: 'lift',
+    tone: 'tight',
   },
   'Drum & Bass': {
     eq: 'Ultra-tight sub, aggressive mids, hyper-detailed high-end, maximum clarity.',
     transitionStyle: 'stepper cut',
     transitionRange: [4, 8],
     order: 'peak',
+    tone: 'tight',
   },
   'Trance': {
     eq: 'Lifted highs, punchy kick sub, open mids — euphoric and wide.',
     transitionStyle: 'energy ramp',
     transitionRange: [8, 12],
     order: 'lift',
+    tone: 'bright',
   },
   // ── Mood & energy ───────────────────────────────────────────────────────────
   'Chill': {
@@ -220,301 +250,127 @@ const vibeProfiles: Record<
     transitionStyle: 'soft crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Hype': {
     eq: 'Maximum punch, boosted presence, bright air, tight mono sub.',
     transitionStyle: 'hard cut',
     transitionRange: [4, 8],
     order: 'peak',
+    tone: 'bright',
   },
   'Melancholy': {
     eq: 'Reduced brightness, forward lower-mids, subtle sub — introspective weight.',
     transitionStyle: 'slow fade',
     transitionRange: [12, 16],
     order: 'moody',
+    tone: 'warm',
   },
   'Euphoric': {
     eq: 'Lifted highs, open mids, punchy sub — emotional and wide.',
     transitionStyle: 'uplift blend',
     transitionRange: [8, 12],
     order: 'lift',
+    tone: 'bright',
   },
   'Romantic': {
     eq: 'Warm body, smooth highs, gentle sub, forward vocal presence.',
     transitionStyle: 'tender crossfade',
     transitionRange: [10, 14],
     order: 'cruise',
+    tone: 'warm',
   },
   'Introspective': {
     eq: 'Recessed highs, soft attack, midrange warmth — space between notes.',
     transitionStyle: 'patient dissolve',
     transitionRange: [12, 16],
     order: 'moody',
+    tone: 'natural',
   },
   'Dark': {
     eq: 'Scooped mids, heavy sub, rolled-off air — brooding and dense.',
     transitionStyle: 'dark blend',
     transitionRange: [8, 12],
     order: 'dark',
+    tone: 'deep',
   },
   'Uplifting': {
     eq: 'High-shelf boost, open presence, punchy lows — joyful and bright.',
     transitionStyle: 'rising blend',
     transitionRange: [8, 12],
     order: 'lift',
+    tone: 'bright',
   },
 };
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const hashString = (input: string) => {
-  let hash = 0;
-  for (let index = 0; index < input.length; index += 1) {
-    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
-  }
-  return hash;
+/** Relative energy of each vibe, used to blend several into one profile. */
+const vibeEnergyScale: Record<Vibe, number> = {
+  'Ambient': 1, 'Introspective': 1, 'Melancholy': 1, 'Deep Night': 1, 'Winter Chill': 1,
+  'Sunrise': 2, 'Morning Coffee': 2, 'Cozy Cabin': 2, 'Autumn Rain': 2, 'Jazz': 2,
+  'Warm Up': 2, 'Chill': 2, 'Reggae': 2,
+  'Sunset Cruise': 3, 'Golden Hour': 3, 'Blue Hour': 3, 'Poolside': 3, 'Romantic': 3,
+  'Soul': 3, 'R&B': 3, 'Midday Drive': 3, 'Hip-Hop': 3, 'Funk': 3,
+  'Late Night': 3, 'After Hours': 3, 'Dark': 3,
+  'Spring Bloom': 4, 'Beach Party': 4, 'House': 4, 'Afrobeats': 4, 'Latin': 4,
+  'Trance': 4, 'Uplifting': 4, 'Euphoric': 4,
+  'Summer Heat': 5, 'Peak Time': 5, 'Techno': 5, 'Drum & Bass': 5,
+  'Festival': 5, 'Hype': 5,
 };
 
-const normalizeSeries = (values: number[]) => {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  if (max - min < 0.0001) {
-    return values.map(() => 0.5);
-  }
+export const allVibes = Object.keys(vibeProfiles) as Vibe[];
 
-  return values.map((value) => (value - min) / (max - min));
+/**
+ * Collapses a multi-select of vibes into the single profile whose energy sits
+ * closest to their average, so sequencing and EQ have one source of truth.
+ */
+export function resolveVibe(vibes: Vibe[]): Vibe {
+  if (vibes.length === 0) return 'Peak Time';
+  if (vibes.length === 1) return vibes[0];
+
+  const average = vibes.reduce((total, vibe) => total + vibeEnergyScale[vibe], 0) / vibes.length;
+
+  // Prefer one of the chosen vibes over an unrelated one that happens to match
+  // the average, which is what the original implementation did.
+  return vibes.reduce((best, vibe) =>
+    Math.abs(vibeEnergyScale[vibe] - average) < Math.abs(vibeEnergyScale[best] - average) ? vibe : best,
+  vibes[0]);
+}
+
+/** Gentle mastering-style EQ per tone. Nothing here exceeds 2.5 dB. */
+const TONE_FILTERS: Record<Tone, string[]> = {
+  natural: [],
+  warm: ['equalizer=f=200:t=q:w=1.1:g=1.5', 'equalizer=f=3200:t=q:w=1.2:g=-1', 'treble=f=8000:g=-1'],
+  bright: ['equalizer=f=3000:t=q:w=1.2:g=1', 'treble=f=8000:g=2'],
+  deep: ['equalizer=f=60:t=q:w=1:g=2', 'equalizer=f=2500:t=q:w=1.5:g=-1.5', 'treble=f=9000:g=-2'],
+  tight: ['highpass=f=28', 'equalizer=f=100:t=q:w=1.2:g=1.5', 'equalizer=f=400:t=q:w=1.5:g=-1'],
+  airy: ['highpass=f=35', 'equalizer=f=250:t=q:w=1.2:g=-1', 'treble=f=10000:g=2.5'],
 };
 
-const formatTitleFromUrl = (url: string) => {
-  try {
-    const parsed = new URL(url);
-    const slug = parsed.pathname
-      .split('/')
-      .filter(Boolean)
-      .pop()
-      ?.replace(/[-_]+/g, ' ')
-      .trim();
+/** Loudness target for the finished mix, matching common streaming levels. */
+export const TARGET_LUFS = -14;
 
-    return slug ? slug.replace(/\b\w/g, (letter) => letter.toUpperCase()) : parsed.hostname;
-  } catch {
-    return url;
-  }
-};
+const MIN_BODY_SECONDS = 8;
+const MIN_TRANSITION_SECONDS = 2;
+const MINIMUM_PLAY_SECONDS = 45;
 
-export const detectProvider = (url: string): Provider => {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) {
-      return 'youtube';
-    }
-    if (hostname.includes('spotify.com')) {
-      return 'spotify';
-    }
-    if (hostname.includes('soundcloud.com')) {
-      return 'soundcloud';
-    }
-    return 'unknown';
-  } catch {
-    return 'unknown';
-  }
-};
+export const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export const createUploadTrack = (file: File): TrackInput => ({
-  id: crypto.randomUUID(),
-  title: file.name.replace(/\.[^.]+$/, ''),
-  source: {
-    kind: 'upload',
-    file,
-  },
-  analysisStatus: 'pending',
-});
+/** ffmpeg EQ chain for a vibe, used by the renderer. */
+export function eqFiltersFor(vibe: Vibe): string[] {
+  return [...TONE_FILTERS[vibeProfiles[vibe].tone]];
+}
 
-export const createLinkTrack = (url: string): TrackInput => ({
-  id: crypto.randomUUID(),
-  title: formatTitleFromUrl(url),
-  source: {
-    kind: 'link',
-    url,
-    provider: detectProvider(url),
-  },
-  analysisStatus: 'pending',
-});
-
-const buildSlicesFromSeries = (energyRaw: number[], brightnessRaw: number[]): EnergySlice[] => {
-  const energy = normalizeSeries(energyRaw);
-  const brightness = normalizeSeries(brightnessRaw);
-
-  return energy.map((value, index) => ({
-    second: index,
-    energy: value,
-    brightness: brightness[index],
-    transitionScore: clamp((1 - value) * 0.65 + brightness[index] * 0.35, 0, 1),
-  }));
-};
-
-const estimateBpm = (channelData: Float32Array, sampleRate: number) => {
-  const frameSize = Math.max(1, Math.floor(sampleRate * 0.05));
-  const frames = Math.floor(channelData.length / frameSize);
-  const envelope = new Array<number>(frames).fill(0);
-
-  for (let frame = 0; frame < frames; frame += 1) {
-    let total = 0;
-    const start = frame * frameSize;
-    const end = Math.min(start + frameSize, channelData.length);
-    for (let sample = start; sample < end; sample += 1) {
-      total += Math.abs(channelData[sample]);
-    }
-    envelope[frame] = total / Math.max(1, end - start);
-  }
-
-  const minLag = Math.round((60 / 160) / 0.05);
-  const maxLag = Math.round((60 / 70) / 0.05);
-  let bestLag = minLag;
-  let bestScore = -Infinity;
-
-  for (let lag = minLag; lag <= maxLag; lag += 1) {
-    let score = 0;
-    for (let frame = lag; frame < envelope.length; frame += 1) {
-      score += envelope[frame] * envelope[frame - lag];
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      bestLag = lag;
-    }
-  }
-
-  return clamp(Math.round(60 / (bestLag * 0.05)), 70, 160);
-};
-
-const pickKey = (seed: number) => KEYS[seed % KEYS.length];
-
-const deriveTransitionMoments = (slices: EnergySlice[], durationSeconds: number) => {
-  const candidates: number[] = [];
-  for (let anchor = 16; anchor < durationSeconds - 16; anchor += 8) {
-    let bestSecond = anchor;
-    let bestScore = -Infinity;
-    for (let second = Math.max(8, anchor - 2); second <= Math.min(durationSeconds - 8, anchor + 2); second += 1) {
-      const slice = slices[second];
-      if (!slice) {
-        continue;
-      }
-      if (slice.transitionScore > bestScore) {
-        bestScore = slice.transitionScore;
-        bestSecond = second;
-      }
-    }
-    candidates.push(bestSecond);
-  }
-
-  return [...new Set(candidates)].slice(0, 6);
-};
-
-const pickIntroOutro = (slices: EnergySlice[]) => {
-  const averageEnergy = slices.reduce((total, slice) => total + slice.energy, 0) / Math.max(1, slices.length);
-
-  const introWindow = slices.slice(4, Math.min(24, slices.length));
-  const introCandidate = introWindow.find((slice) => slice.energy >= averageEnergy * 0.9) ?? introWindow[0] ?? slices[0];
-
-  const outroWindow = slices.slice(Math.max(0, slices.length - 24), Math.max(0, slices.length - 4));
-  const lastOutroWindowSlice = outroWindow.length > 0 ? outroWindow[outroWindow.length - 1] : undefined;
-  const lastSlice = slices.length > 0 ? slices[slices.length - 1] : undefined;
-  const outroCandidate = [...outroWindow].reverse().find((slice) => slice.energy >= averageEnergy * 0.85) ?? lastOutroWindowSlice ?? lastSlice;
-
-  return {
-    introSecond: introCandidate?.second ?? 0,
-    outroSecond: outroCandidate?.second ?? Math.max(0, slices.length - 1),
-  };
-};
-
-export const analyzeUploadedTrack = async (file: File): Promise<TrackAnalysis> => {
-  const audioContext = new AudioContext();
-  try {
-    const buffer = await file.arrayBuffer();
-    const decoded = await audioContext.decodeAudioData(buffer.slice(0));
-    const durationSeconds = Math.max(1, Math.floor(decoded.duration));
-    const left = decoded.getChannelData(0);
-    const right = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : left;
-    const mono = new Float32Array(left.length);
-
-    for (let index = 0; index < left.length; index += 1) {
-      mono[index] = (left[index] + right[index]) / 2;
-    }
-
-    const energyRaw: number[] = [];
-    const brightnessRaw: number[] = [];
-
-    for (let second = 0; second < durationSeconds; second += 1) {
-      const start = second * decoded.sampleRate;
-      const end = Math.min((second + 1) * decoded.sampleRate, mono.length);
-      let energy = 0;
-      let brightness = 0;
-
-      for (let sample = start + 1; sample < end; sample += 1) {
-        const current = mono[sample];
-        const previous = mono[sample - 1];
-        energy += current * current;
-        brightness += Math.abs(current - previous);
-      }
-
-      const frameLength = Math.max(1, end - start);
-      energyRaw.push(Math.sqrt(energy / frameLength));
-      brightnessRaw.push(brightness / frameLength);
-    }
-
-    const slices = buildSlicesFromSeries(energyRaw, brightnessRaw);
-    const averageEnergy = slices.reduce((total, slice) => total + slice.energy, 0) / slices.length;
-    const averageBrightness = slices.reduce((total, slice) => total + slice.brightness, 0) / slices.length;
-    const bpm = estimateBpm(mono, decoded.sampleRate);
-    const { introSecond, outroSecond } = pickIntroOutro(slices);
-
-    return {
-      durationSeconds,
-      usableDurationSeconds: Math.max(45, outroSecond - introSecond),
-      bpm,
-      key: pickKey(hashString(file.name) + Math.round(averageBrightness * 100)),
-      averageEnergy,
-      averageBrightness,
-      introSecond,
-      outroSecond,
-      transitionMoments: deriveTransitionMoments(slices, durationSeconds),
-      slices,
-      isEstimated: false,
-    };
-  } finally {
-    void audioContext.close();
-  }
-};
-
-export const analyzeLinkedTrack = (url: string, provider: Provider): TrackAnalysis => {
-  const seed = hashString(url + provider);
-  const durationSeconds = 180 + (seed % 121);
-  const slices: EnergySlice[] = [];
-
-  for (let second = 0; second < durationSeconds; second += 1) {
-    const energy = clamp(0.45 + Math.sin((second + seed % 17) / 14) * 0.25 + ((seed >> (second % 8)) & 7) / 40, 0.12, 0.95);
-    const brightness = clamp(0.4 + Math.cos((second + seed % 29) / 11) * 0.2, 0.15, 0.9);
-    const transitionScore = clamp((1 - energy) * 0.55 + brightness * 0.45, 0, 1);
-    slices.push({ second, energy, brightness, transitionScore });
-  }
-
-  const averageEnergy = slices.reduce((total, slice) => total + slice.energy, 0) / slices.length;
-  const averageBrightness = slices.reduce((total, slice) => total + slice.brightness, 0) / slices.length;
-  const { introSecond, outroSecond } = pickIntroOutro(slices);
-
-  return {
-    durationSeconds,
-    usableDurationSeconds: Math.max(60, outroSecond - introSecond),
-    bpm: 92 + (seed % 46),
-    key: pickKey(seed),
-    averageEnergy,
-    averageBrightness,
-    introSecond,
-    outroSecond,
-    transitionMoments: deriveTransitionMoments(slices, durationSeconds),
-    slices,
-    isEstimated: true,
-  };
-};
+/**
+ * Maps the written transition style onto an acrossfade curve. Quarter-sine is
+ * the default because it holds constant power through the blend.
+ */
+export function crossfadeCurveFor(style: string): string {
+  const normalized = style.toLowerCase();
+  if (normalized.includes('cut')) return 'exp';
+  if (normalized.includes('dissolve')) return 'hsin';
+  if (normalized.includes('fade')) return 'log';
+  return 'qsin';
+}
 
 const orderRank = (analysis: TrackAnalysis, vibe: Vibe) => {
   switch (vibeProfiles[vibe].order) {
@@ -552,21 +408,29 @@ const transitionCompatibility = (current: TrackAnalysis, next: TrackAnalysis, vi
   return bpmGap * 0.45 + energyGap * 0.35 + brightnessGap * 0.2 + orderPenalty;
 };
 
-const orderTracks = (tracks: TrackInput[], vibe: Vibe) => {
-  const pending = [...tracks].filter((track) => track.analysis);
-  if (pending.length < 2) {
-    return pending;
-  }
+/**
+ * Seeds with the best opener for the vibe, then repeatedly picks whichever
+ * remaining track blends most cleanly out of the current one.
+ */
+export function orderTracks(tracks: TrackInput[], vibe: Vibe): TrackInput[] {
+  const pending = [...tracks];
+  if (pending.length < 2) return pending;
 
-  pending.sort((left, right) => (orderRank(left.analysis!, vibe) > orderRank(right.analysis!, vibe) ? 1 : -1));
+  // A comparator must return 0 for ties, otherwise the sort is inconsistent and
+  // the resulting order is undefined.
+  pending.sort((left, right) => {
+    const difference = orderRank(left.analysis, vibe) - orderRank(right.analysis, vibe);
+    if (difference !== 0) return difference;
+    return left.id.localeCompare(right.id);
+  });
 
   const ordered: TrackInput[] = [pending.shift()!];
   while (pending.length > 0) {
-    const current = ordered[ordered.length - 1].analysis!;
+    const current = ordered[ordered.length - 1].analysis;
     let bestIndex = 0;
     let bestScore = Infinity;
     pending.forEach((candidate, index) => {
-      const score = transitionCompatibility(current, candidate.analysis!, vibe);
+      const score = transitionCompatibility(current, candidate.analysis, vibe);
       if (score < bestScore) {
         bestScore = score;
         bestIndex = index;
@@ -576,50 +440,156 @@ const orderTracks = (tracks: TrackInput[], vibe: Vibe) => {
   }
 
   return ordered;
-};
+}
 
-const allocateDurations = (tracks: TrackInput[], targetMinutes?: number) => {
-  const durations = tracks.map((track) => track.analysis!.usableDurationSeconds);
-  const minimum = 45;
+/**
+ * Distributes a target runtime across tracks, trimming proportionally from
+ * whatever has the most room to give.
+ */
+export function allocateDurations(tracks: TrackInput[], targetMinutes?: number): number[] {
+  const durations = tracks.map((track) =>
+    Math.max(1, Math.min(track.analysis.usableDurationSeconds, track.analysis.durationSeconds)),
+  );
   const total = durations.reduce((sum, value) => sum + value, 0);
-  if (!targetMinutes || targetMinutes * 60 >= total) {
-    return durations;
-  }
+
+  if (!targetMinutes || !Number.isFinite(targetMinutes) || targetMinutes <= 0) return durations;
 
   const target = targetMinutes * 60;
-  const floorTotal = tracks.length * minimum;
-  if (target <= floorTotal) {
-    return tracks.map(() => minimum);
-  }
+  if (target >= total) return durations;
 
-  let remainingCut = total - target;
+  const floor = Math.min(MINIMUM_PLAY_SECONDS, Math.min(...durations));
+  if (target <= floor * tracks.length) return durations.map(() => floor);
+
   const allocated = [...durations];
+  let remainingCut = total - target;
 
-  while (remainingCut > 0.5) {
-    const adjustable = allocated.map((value, index) => ({ value, index })).filter(({ value }) => value > minimum);
-    if (adjustable.length === 0) {
-      break;
-    }
-    const capacity = adjustable.reduce((sum, item) => sum + (item.value - minimum), 0);
-    adjustable.forEach(({ value, index }) => {
-      const share = ((value - minimum) / capacity) * remainingCut;
-      const cut = Math.min(value - minimum, Math.max(1, Math.round(share)));
-      allocated[index] -= cut;
+  // Guard the loop: each pass must remove something, and rounding is applied
+  // only to the final result so the target is not overshot.
+  let guard = 0;
+  while (remainingCut > 0.5 && guard < 1000) {
+    guard += 1;
+    const adjustable = allocated
+      .map((value, index) => ({ value, index }))
+      .filter((entry) => entry.value > floor + 1e-6);
+    if (adjustable.length === 0) break;
+
+    const capacity = adjustable.reduce((sum, entry) => sum + (entry.value - floor), 0);
+    if (capacity <= 1e-6) break;
+
+    const cutThisPass = Math.min(remainingCut, capacity);
+    for (const entry of adjustable) {
+      const share = ((entry.value - floor) / capacity) * cutThisPass;
+      const cut = Math.min(entry.value - floor, share);
+      allocated[entry.index] -= cut;
       remainingCut -= cut;
-    });
+    }
   }
 
-  return allocated.map((value) => Math.max(minimum, Math.round(value)));
-};
+  return allocated.map((value) => Math.max(1, Math.round(value)));
+}
 
 const buildTransitionLength = (fromTrack: TrackAnalysis, toTrack: TrackAnalysis, vibe: Vibe) => {
   const [min, max] = vibeProfiles[vibe].transitionRange;
   const bpmGap = Math.abs(fromTrack.bpm - toTrack.bpm);
+  // Close tempos can hold a longer blend; distant ones need to get on with it.
   const bias = bpmGap < 8 ? 2 : bpmGap > 20 ? -1 : 0;
   return clamp(Math.round((min + max) / 2 + bias), min, max);
 };
 
-export const generateMixPlan = ({
+/**
+ * Every track has to be long enough to host the blend coming in, the blend
+ * going out, and some untouched body in between. Without this, chained
+ * crossfades would overlap each other and the render would be mush.
+ */
+export function normalizeTransitions(playDurations: number[], rawLengths: number[]): number[] {
+  const lengths = rawLengths.map((length) => Math.max(0, Math.round(length)));
+
+  for (let pass = 0; pass < 12; pass += 1) {
+    let changed = false;
+
+    for (let index = 0; index < playDurations.length; index += 1) {
+      const incoming = index > 0 ? lengths[index - 1] : 0;
+      const outgoing = index < lengths.length ? lengths[index] : 0;
+      const used = incoming + outgoing;
+      if (used <= 0) continue;
+
+      // Reserve untouched body in the middle of the track, but never demand
+      // more of it than a short track can actually give. Enforcing a fixed
+      // minimum here would hand a 3s track a 2s blend on each side, and chained
+      // acrossfade would then blend the same audio twice.
+      const body = Math.min(MIN_BODY_SECONDS, Math.max(0, playDurations[index]) * 0.4);
+      const budget = Math.max(0, playDurations[index] - body);
+      if (used <= budget) continue;
+
+      const scale = budget / used;
+      if (index > 0) lengths[index - 1] = Math.floor(incoming * scale);
+      if (index < lengths.length) lengths[index] = Math.floor(outgoing * scale);
+      changed = true;
+    }
+
+    if (!changed) break;
+  }
+
+  return lengths.map((length, index) => {
+    // A blend can never exceed either neighbour's play time.
+    const ceiling = Math.max(0, Math.min(playDurations[index], playDurations[index + 1]) - 1);
+    const clamped = clamp(length, 0, ceiling);
+    // Anything under a second is not audible as a blend, so splice instead.
+    return clamped < MIN_TRANSITION_SECONDS / 2 ? 0 : clamped;
+  });
+}
+
+/**
+ * Downsamples the energy curve across a play window to a fixed number of points
+ * so the UI can draw a waveform without shipping every second of analysis.
+ */
+function energyPreview(analysis: TrackAnalysis, startSecond: number, endSecond: number, points = 96): number[] {
+  const window = analysis.slices.filter((slice) => slice.second >= startSecond && slice.second < endSecond);
+  const source = window.length > 0 ? window : analysis.slices;
+  if (source.length === 0) return new Array<number>(points).fill(0.5);
+
+  const preview: number[] = [];
+  for (let index = 0; index < points; index += 1) {
+    const from = Math.floor((index / points) * source.length);
+    const to = Math.max(from + 1, Math.floor(((index + 1) / points) * source.length));
+    let sum = 0;
+    let counted = 0;
+    for (let cursor = from; cursor < to && cursor < source.length; cursor += 1) {
+      sum += source[cursor].energy;
+      counted += 1;
+    }
+    preview.push(counted > 0 ? Math.round((sum / counted) * 1000) / 1000 : 0);
+  }
+  return preview;
+}
+
+/** How far a play window may move to land on a musical boundary. */
+const SNAP_TOLERANCE_SECONDS = 12;
+
+/**
+ * Nudges the end of a play window onto the nearest low-energy moment. Ties go to
+ * the earlier moment, and the search is symmetric so the small over- and
+ * under-shoots cancel out across a set instead of dragging every mix short.
+ */
+function snapEnd(analysis: TrackAnalysis, startOffset: number, playDuration: number): number {
+  const rawEnd = startOffset + playDuration;
+  const floor = startOffset + Math.min(playDuration, MIN_BODY_SECONDS);
+
+  let best = rawEnd;
+  let bestGap = Infinity;
+  for (const moment of analysis.transitionMoments) {
+    if (moment < floor || moment > analysis.durationSeconds) continue;
+    const gap = Math.abs(moment - rawEnd);
+    if (gap <= SNAP_TOLERANCE_SECONDS && gap < bestGap) {
+      bestGap = gap;
+      best = moment;
+    }
+  }
+
+  return clamp(best, floor, analysis.durationSeconds);
+}
+
+export function generateMixPlan({
   title,
   tracks,
   vibe,
@@ -629,85 +599,208 @@ export const generateMixPlan = ({
   tracks: TrackInput[];
   vibe: Vibe;
   targetMinutes?: number;
-}): MixPlan => {
-  const ordered = orderTracks(tracks, vibe);
-  const allocations = allocateDurations(ordered, targetMinutes);
+}): MixPlan {
   const warnings: string[] = [];
-
-  if (tracks.some((track) => track.analysis?.isEstimated)) {
-    warnings.push('Some streaming links use estimated analysis because browser-only audio decoding is not available for those providers.');
+  if (tracks.length === 0) {
+    return {
+      title: title.trim() || 'Untitled mix',
+      vibe,
+      targetMinutes,
+      totalDurationSeconds: 0,
+      tracks: [],
+      summary: 'No tracks to sequence.',
+      warnings: ['Add at least two songs to build a mix.'],
+    };
   }
 
+  const ordered = orderTracks(tracks, vibe);
+
+  // Blend lengths depend only on tempo and vibe, so they can be costed before
+  // any material is allocated. Every crossfade removes its own length from the
+  // finished runtime, so the tracks have to supply the target plus the overlaps
+  // or the mix always lands short of what was asked for.
+  const rawLengths = ordered
+    .slice(0, -1)
+    .map((track, index) => buildTransitionLength(track.analysis, ordered[index + 1].analysis, vibe));
+  const overlapBudget = rawLengths.reduce((sum, length) => sum + length, 0);
+
+  const hasTarget = Boolean(targetMinutes) && Number.isFinite(targetMinutes) && (targetMinutes as number) > 0;
+  const targetSeconds = hasTarget ? (targetMinutes as number) * 60 : 0;
+
+  const build = (requestSeconds: number | undefined) => {
+    const allocations = allocateDurations(ordered, requestSeconds === undefined ? undefined : requestSeconds / 60);
+
+    const windows = ordered.map((track, index) => {
+      const analysis = track.analysis;
+      const maxStart = Math.max(0, analysis.durationSeconds - Math.min(allocations[index], analysis.durationSeconds));
+      const startOffsetSeconds = clamp(analysis.introSecond, 0, maxStart);
+      const endOffsetSeconds = snapEnd(analysis, startOffsetSeconds, allocations[index]);
+      return {
+        startOffsetSeconds,
+        endOffsetSeconds,
+        // The window and its length must agree exactly: the renderer seeks with
+        // one and reads with the other.
+        playDurationSeconds: endOffsetSeconds - startOffsetSeconds,
+      };
+    });
+
+    const lengths = normalizeTransitions(
+      windows.map((window) => window.playDurationSeconds),
+      rawLengths,
+    );
+    const total =
+      windows.reduce((sum, window) => sum + window.playDurationSeconds, 0) -
+      lengths.reduce((sum, length) => sum + length, 0);
+
+    return { windows, lengths, total };
+  };
+
+  // Per-track rounding and window snapping both move the runtime a little, so
+  // the request is re-costed until it settles at or under the target. When the
+  // per-track floor is what is holding the mix open, further passes cannot help
+  // and the overrun is reported instead.
+  let attempt = build(hasTarget ? targetSeconds + overlapBudget : undefined);
+  if (hasTarget) {
+    let request = targetSeconds + overlapBudget;
+    for (let pass = 0; pass < 4 && attempt.total > targetSeconds; pass += 1) {
+      const next = request - (attempt.total - targetSeconds);
+      if (next <= 0 || next >= request) break;
+      const retry = build(next);
+      if (retry.total >= attempt.total) break;
+      request = next;
+      attempt = retry;
+    }
+  }
+
+  const { windows, lengths: transitionLengths } = attempt;
+
+  let cursor = 0;
   const planTracks: MixPlanTrack[] = ordered.map((track, index) => {
-    const analysis = track.analysis!;
-    const playDurationSeconds = Math.min(allocations[index], analysis.durationSeconds);
-    const transitionLength = index < ordered.length - 1 ? buildTransitionLength(analysis, ordered[index + 1].analysis!, vibe) : 0;
-    const startOffsetSeconds = clamp(analysis.introSecond, 0, Math.max(0, analysis.durationSeconds - playDurationSeconds));
-    const endOffsetSeconds = clamp(startOffsetSeconds + playDurationSeconds, playDurationSeconds, analysis.durationSeconds);
-    const transitionAnchor = analysis.transitionMoments.find((moment) => moment >= startOffsetSeconds + 24 && moment <= endOffsetSeconds - 10);
-    const transitionOutAt = transitionAnchor ?? Math.max(startOffsetSeconds + 24, endOffsetSeconds - transitionLength - 4);
+    const analysis = track.analysis;
+    const window = windows[index];
+    const incoming = index > 0 ? transitionLengths[index - 1] : 0;
+    const outgoing = index < transitionLengths.length ? transitionLengths[index] : 0;
+
+    const mixStartSeconds = cursor;
+    cursor += window.playDurationSeconds - outgoing;
+
+    const measuredLufs = track.loudness?.integratedLufs;
+    const gainDb =
+      measuredLufs !== undefined && Number.isFinite(measuredLufs)
+        ? Math.round(clamp(TARGET_LUFS - measuredLufs, -12, 12) * 10) / 10
+        : 0;
+
+    const notes = [
+      `Average energy ${Math.round(analysis.averageEnergy * 100)}%, brightness ${Math.round(analysis.averageBrightness * 100)}%.`,
+    ];
+    if (analysis.bpmConfidence < 0.35) {
+      notes.push(`Tempo is an estimate; ${analysis.bpm} BPM was a weak match.`);
+    }
+    if (analysis.keyConfidence < 0.3) {
+      notes.push('Key detection was inconclusive for this track.');
+    }
+    if (gainDb !== 0) {
+      notes.push(`Level trimmed ${gainDb > 0 ? '+' : ''}${gainDb} dB to match the set.`);
+    }
 
     return {
       trackId: track.id,
       title: track.title,
-      provider: track.source.kind === 'upload' ? 'upload' : track.source.provider,
+      artist: track.artist,
+      provider: track.provider,
       bpm: analysis.bpm,
       key: analysis.key,
-      playDurationSeconds,
-      startOffsetSeconds,
-      endOffsetSeconds,
+      playDurationSeconds: window.playDurationSeconds,
+      startOffsetSeconds: window.startOffsetSeconds,
+      endOffsetSeconds: window.endOffsetSeconds,
       eqProfile: vibeProfiles[vibe].eq,
-      transitionOut:
-        transitionLength > 0
+      gainDb,
+      mixStartSeconds,
+      energyPreview: energyPreview(analysis, window.startOffsetSeconds, window.endOffsetSeconds),
+      transitionIn:
+        incoming > 0
           ? {
-              fromSecond: transitionOutAt,
-              toSecond: clamp(transitionOutAt + transitionLength, transitionOutAt + 4, endOffsetSeconds),
-              lengthSeconds: transitionLength,
+              fromSecond: window.startOffsetSeconds,
+              toSecond: window.startOffsetSeconds + incoming,
+              lengthSeconds: incoming,
               style: vibeProfiles[vibe].transitionStyle,
-              reason: `Blend near a phrase-friendly pocket with ${Math.round(analysis.averageEnergy * 100)}% energy.`,
+              reason: `Rides in over ${incoming}s at ${analysis.bpm} BPM in ${analysis.key}.`,
             }
           : undefined,
-      notes: [
-        analysis.isEstimated ? 'Remote link analysis is estimated.' : 'Audio was analyzed second by second from the uploaded file.',
-        `Average energy ${Math.round(analysis.averageEnergy * 100)}%, brightness ${Math.round(analysis.averageBrightness * 100)}%.`,
-      ],
+      transitionOut:
+        outgoing > 0
+          ? {
+              fromSecond: window.endOffsetSeconds - outgoing,
+              toSecond: window.endOffsetSeconds,
+              lengthSeconds: outgoing,
+              style: vibeProfiles[vibe].transitionStyle,
+              reason: `Hands over during a ${Math.round(analysis.averageEnergy * 100)}% energy stretch.`,
+            }
+          : undefined,
+      notes,
     };
   });
 
-  for (let index = 1; index < planTracks.length; index += 1) {
-    const previous = planTracks[index - 1];
-    const current = planTracks[index];
-    const currentAnalysis = ordered[index].analysis!;
-    const transitionLength = previous.transitionOut?.lengthSeconds ?? 0;
-    current.transitionIn = {
-      fromSecond: clamp(currentAnalysis.introSecond, 0, Math.max(0, currentAnalysis.durationSeconds - transitionLength)),
-      toSecond: clamp(currentAnalysis.introSecond + transitionLength, transitionLength, currentAnalysis.durationSeconds),
-      lengthSeconds: transitionLength,
-      style: previous.transitionOut?.style ?? vibeProfiles[vibe].transitionStyle,
-      reason: `Matched into ${current.bpm} BPM with ${current.key} tonal color.`,
-    };
+  const totalDurationSeconds =
+    planTracks.reduce((sum, track) => sum + track.playDurationSeconds, 0) -
+    transitionLengths.reduce((sum, length) => sum + length, 0);
+
+  if (hasTarget) {
+    // The longest mix these tracks could possibly produce, so a shortfall is
+    // only reported when the material really is the limit.
+    const overlapTotal = transitionLengths.reduce((sum, length) => sum + length, 0);
+    const material =
+      ordered.reduce(
+        (sum, track) => sum + Math.min(track.analysis.usableDurationSeconds, track.analysis.durationSeconds),
+        0,
+      ) - overlapTotal;
+
+    if (totalDurationSeconds < targetSeconds - 30 && material < targetSeconds - 30) {
+      warnings.push('The target duration is longer than the usable material, so the mix stays shorter than requested.');
+    }
+    if (totalDurationSeconds > targetSeconds + 2) {
+      const minutes = Math.round(totalDurationSeconds / 6) / 10;
+      warnings.push(
+        `Keeping every track above ${MINIMUM_PLAY_SECONDS}s means this mix runs ${minutes} minutes, longer than the ${targetMinutes} you asked for. Use fewer songs for a shorter set.`,
+      );
+    }
+  }
+  if (planTracks.length === 1) {
+    warnings.push('A single track has nothing to blend into, so this renders as a straight edit.');
   }
 
-  const overlap = planTracks.slice(0, -1).reduce((sum, track) => sum + (track.transitionOut?.lengthSeconds ?? 0), 0);
-  const totalDurationSeconds = planTracks.reduce((sum, track) => sum + track.playDurationSeconds, 0) - overlap;
-
-  if (targetMinutes && totalDurationSeconds < targetMinutes * 60 - 30) {
-    warnings.push('The target duration is longer than the usable material, so the generated mix stays shorter than requested.');
+  const weakTempo = planTracks.filter((_, index) => ordered[index].analysis.bpmConfidence < 0.35).length;
+  if (weakTempo > 0) {
+    warnings.push(`${weakTempo} track${weakTempo === 1 ? '' : 's'} had an unclear tempo, so blend lengths there are a best guess.`);
   }
 
   return {
     title: title.trim() || 'Untitled mix',
     vibe,
     targetMinutes,
-    totalDurationSeconds,
+    totalDurationSeconds: Math.max(0, Math.round(totalDurationSeconds)),
     tracks: planTracks,
-    summary: `${planTracks.length} tracks sequenced for a ${vibe.toLowerCase()} set with ${planTracks.length - 1} transitions.`,
+    summary: `${planTracks.length} tracks sequenced for a ${vibe.toLowerCase()} set with ${Math.max(0, planTracks.length - 1)} transitions.`,
     warnings,
   };
+}
+
+/**
+ * Sizes on disk, in MB. Library entries written by older versions can be missing
+ * a size, and "NaN MB" is worse than admitting it is unknown.
+ */
+export const formatMegabytes = (bytes: number | undefined, decimals = 1) => {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '—';
+  return `${(bytes / 1_048_576).toFixed(decimals)} MB`;
 };
 
 export const formatSeconds = (seconds: number) => {
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.floor(seconds % 60);
+  const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const remainder = Math.floor(safe % 60);
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}`;
+  }
   return `${minutes}:${remainder.toString().padStart(2, '0')}`;
 };

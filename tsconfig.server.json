@@ -1,16 +1,18 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020"],
+    "target": "ES2022",
+    "lib": ["ES2022"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "esModuleInterop": true,
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
-    "outDir": "dist-server",
+    "noEmit": true,
     "rootDir": ".",
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "src/types.ts", "src/lib/mixEngine.ts"]
+  "include": ["server/**/*.ts", "electron/**/*.ts", "scripts/**/*.ts", "src/types.ts", "src/lib/mixEngine.ts"]
 }

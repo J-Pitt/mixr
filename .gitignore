@@ -1,10 +1,17 @@
 node_modules/
+
+# Build output
 dist/
+dist-electron/
 dist-server/
-.DS_Store
-.env
-.env.*
+release/
+
+# Runtime data and scratch
 uploads/
 tmp/
 renders/
 *.log
+
+.DS_Store
+.env
+.env.*
