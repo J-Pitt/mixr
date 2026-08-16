@@ -8,7 +8,7 @@ import { SetupBanner } from './components/SetupBanner';
 import { emptyRow, SongRows, type SongRow } from './components/SongRows';
 import { TitleBar } from './components/TitleBar';
 import { VibePicker } from './components/VibePicker';
-import type { LibrarySnapshot, RenderProgress, ToolStatus, TrackRequest, Vibe } from './types';
+import type { LibrarySnapshot, RenderProgress, SearchResult, ToolStatus, TrackRequest, Vibe } from './types';
 
 const EMPTY_LIBRARY: LibrarySnapshot = { mixes: [], tracks: [] };
 
@@ -130,6 +130,25 @@ export default function App() {
       const filled = [...kept, ...additions];
       return blanks.length > additions.length ? [...filled, ...blanks.slice(additions.length)] : filled;
     });
+  };
+
+  const applyPlaylist = (listing: { title: string; truncated: boolean; limit: number; results: SearchResult[] }) => {
+    const additions: SongRow[] = listing.results.map((result) => ({
+      id: crypto.randomUUID(),
+      text: result.title,
+      picked: result,
+    }));
+
+    setRows((current) => {
+      const kept = current.filter((row) => row.text.trim() || row.localPath || row.picked);
+      return kept.length > 0 ? [...kept, ...additions] : additions;
+    });
+    setTitle((current) => (current.trim() ? current : listing.title));
+    setFormError(
+      listing.truncated
+        ? `Loaded the first ${listing.results.length} tracks (playlists are capped at ${listing.limit}).`
+        : null,
+    );
   };
 
   const onDrop = (event: React.DragEvent) => {
@@ -268,8 +287,8 @@ export default function App() {
             <header className="hero">
               <h1>Make a real mix from songs you name.</h1>
               <p>
-                Name the songs, paste links, or drop files. mixR fetches the audio, measures tempo, key, and loudness,
-                sequences the set, and renders one continuous crossfaded MP3.
+                Name the songs, paste a playlist, drop in links or files. mixR fetches the audio, measures tempo, key,
+                and loudness, sequences the set, and renders one continuous crossfaded MP3.
               </p>
             </header>
 
@@ -334,7 +353,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <SongRows rows={rows} provider={provider} onChange={setRows} onPickFiles={pickFiles} disabled={busy} />
+                <SongRows
+                  rows={rows}
+                  provider={provider}
+                  onChange={setRows}
+                  onPickFiles={pickFiles}
+                  onPlaylistLoaded={applyPlaylist}
+                  disabled={busy}
+                />
 
                 <VibePicker selected={vibes} onChange={setVibes} disabled={busy} />
 

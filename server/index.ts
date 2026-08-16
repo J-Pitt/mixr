@@ -6,7 +6,7 @@ import express, { type Response } from 'express';
 import type { ToolStatus, TrackRequest, Vibe } from '../src/types.js';
 import { allVibes } from '../src/lib/mixEngine.js';
 import { ffmpegVersion } from './lib/ffmpeg.js';
-import { ingestTrack, isHttpUrl, searchTracks } from './lib/ingest.js';
+import { ingestTrack, isHttpUrl, loadPlaylist, searchTracks } from './lib/ingest.js';
 import { cancelJob, getJob, startMixJob, subscribe } from './lib/jobs.js';
 import { cleanTmp, ensureDirs, paths } from './lib/paths.js';
 import * as store from './lib/store.js';
@@ -148,6 +148,21 @@ export function createApp() {
       response.json({ results: await searchTracks(query, provider, limit) });
     } catch (error) {
       fail(response, 502, error instanceof Error ? error.message : 'Search failed.');
+    }
+  });
+
+  /** Expands a YouTube playlist or SoundCloud set into individual tracks. */
+  app.get('/api/playlist', async (request, response) => {
+    const url = String(request.query.url ?? '').trim();
+    if (!url) {
+      fail(response, 400, 'Provide a playlist link.');
+      return;
+    }
+
+    try {
+      response.json(await loadPlaylist(url));
+    } catch (error) {
+      fail(response, 502, error instanceof Error ? error.message : 'Could not read that playlist.');
     }
   });
 

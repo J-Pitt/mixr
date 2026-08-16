@@ -18,6 +18,7 @@ interface SongRowsProps {
   provider: 'youtube' | 'soundcloud';
   onChange: (rows: SongRow[]) => void;
   onPickFiles: () => void;
+  onPlaylistLoaded: (payload: { title: string; truncated: boolean; limit: number; results: SearchResult[] }) => void;
   disabled: boolean;
 }
 
@@ -29,7 +30,7 @@ const providerLabel: Record<string, string> = {
   unknown: 'Link',
 };
 
-export function SongRows({ rows, provider, onChange, onPickFiles, disabled }: SongRowsProps) {
+export function SongRows({ rows, provider, onChange, onPickFiles, onPlaylistLoaded, disabled }: SongRowsProps) {
   const update = (id: string, patch: Partial<SongRow>) =>
     onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
 
@@ -51,6 +52,8 @@ export function SongRows({ rows, provider, onChange, onPickFiles, disabled }: So
         </div>
       </div>
 
+      <PlaylistLoader disabled={disabled} onLoaded={onPlaylistLoaded} />
+
       <div className="song-list">
         {rows.map((row, index) => (
           <SongRowItem
@@ -66,9 +69,72 @@ export function SongRows({ rows, provider, onChange, onPickFiles, disabled }: So
       </div>
 
       <p className="summary-note">
-        Type a song name and pick from the results, paste a YouTube, SoundCloud, or Spotify link, or add files from your
-        Mac. Anything you leave as plain text is searched on {providerLabel[provider]} when the mix is built.
+        Type a song name and pick from the results, paste a YouTube, SoundCloud, or Spotify link, load a playlist, or
+        add files from your Mac. Anything you leave as plain text is searched on {providerLabel[provider]} when the mix
+        is built.
       </p>
+    </div>
+  );
+}
+
+function PlaylistLoader({
+  disabled,
+  onLoaded,
+}: {
+  disabled: boolean;
+  onLoaded: (payload: { title: string; truncated: boolean; limit: number; results: SearchResult[] }) => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    const trimmed = url.trim();
+    if (!trimmed || busy || disabled) return;
+
+    if (!isProbablyUrl(trimmed)) {
+      setError('Paste a YouTube or SoundCloud playlist link.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    api
+      .playlist(trimmed)
+      .then((listing) => {
+        onLoaded(listing);
+        setUrl('');
+      })
+      .catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : 'Could not read that playlist.');
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="playlist-loader">
+      <label className="field">
+        <span>Playlist</span>
+        <div className="playlist-row">
+          <input
+            value={url}
+            disabled={disabled || busy}
+            onChange={(event) => setUrl(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                load();
+              }
+            }}
+            placeholder="Paste a YouTube playlist or SoundCloud set link"
+            aria-label="Playlist link"
+          />
+          <button type="button" className="ghost-button" onClick={load} disabled={disabled || busy || !url.trim()}>
+            {busy ? 'Loading…' : 'Load playlist'}
+          </button>
+        </div>
+      </label>
+      {error ? <p className="row-meta row-error">{error}</p> : null}
     </div>
   );
 }

@@ -61,6 +61,12 @@ export const api = {
       { signal },
     ).then((body) => body.results),
 
+  playlist: (url: string, signal?: AbortSignal) =>
+    request<{ title: string; truncated: boolean; limit: number; results: SearchResult[] }>(
+      `/api/playlist?url=${encodeURIComponent(url)}`,
+      { signal },
+    ),
+
   addTrack: (track: TrackRequest) =>
     request<{ track: IngestedTrack; reused: boolean; note?: string }>('/api/tracks', {
       method: 'POST',

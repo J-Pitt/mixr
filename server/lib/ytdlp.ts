@@ -5,6 +5,8 @@ import { Readable, Transform } from 'node:stream';
 import { paths } from './paths.js';
 import { ProcessError, run } from './proc.js';
 
+export { isPlaylistUrl } from '../../src/lib/playlistUrl.js';
+
 const ZIPAPP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
 const MACOS_BINARY_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos';
 
@@ -220,14 +222,16 @@ export async function ytDlpVersion(): Promise<string | null> {
   return stdout.trim();
 }
 
-const BASE_ARGS = [
+const SHARED_ARGS = [
   '--no-warnings',
-  '--no-playlist',
   '--no-color',
   '--retries', '3',
   '--socket-timeout', '20',
   '--ignore-config',
 ];
+
+/** Mix jobs and the UI stay usable; a 200-track set would take hours to ingest. */
+export const MAX_PLAYLIST_TRACKS = 50;
 
 /**
  * yt-dlp reports the useful part of a failure on an "ERROR:" line. Without
@@ -253,10 +257,19 @@ function explain(error: unknown): Error {
   return new Error(detail || error.message);
 }
 
-async function ytDlp(args: string[], options: Parameters<typeof run>[2] = {}) {
+async function ytDlp(
+  args: string[],
+  options: Parameters<typeof run>[2] & { playlist?: boolean } = {},
+) {
+  const { playlist = false, ...runOptions } = options;
   const invocation = await ensureYtDlp();
+  const playlistArg = playlist ? '--yes-playlist' : '--no-playlist';
   try {
-    return await run(invocation.command, [...invocation.prefixArgs, ...BASE_ARGS, ...args], options);
+    return await run(
+      invocation.command,
+      [...invocation.prefixArgs, ...SHARED_ARGS, playlistArg, ...args],
+      runOptions,
+    );
   } catch (error) {
     throw explain(error);
   }
@@ -277,7 +290,8 @@ interface RawEntry {
   extractor_key?: string;
   ie_key?: string;
   _type?: string;
-  entries?: RawEntry[];
+  playlist_count?: number;
+  entries?: Array<RawEntry | null>;
 }
 
 function pickThumbnail(entry: RawEntry): string | undefined {
@@ -300,10 +314,48 @@ function detectProviderFromEntry(entry: RawEntry, fallbackUrl: string): 'youtube
   return 'unknown';
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function resolveWebpageUrl(entry: RawEntry, fallbackUrl: string): string | undefined {
+  const direct = entry.webpage_url ?? entry.url;
+  if (direct && isHttpUrl(direct)) return direct;
+
+  const provider = detectProviderFromEntry(entry, fallbackUrl);
+  if (entry.id && provider === 'youtube') return `https://www.youtube.com/watch?v=${entry.id}`;
+  if (direct) return direct;
+  return undefined;
+}
+
+/** SoundCloud --flat-playlist entries often have a URL and no title. */
+function titleFromUrl(url: string): string | undefined {
+  try {
+    const slug = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).at(-1) ?? '');
+    if (!slug) return undefined;
+    return slug.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim();
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveTitle(entry: RawEntry, webpageUrl: string): string | undefined {
+  const titled = (entry.track ?? entry.title)?.trim();
+  if (titled && titled !== 'NA' && !/^\[(deleted|private|unavailable)/i.test(titled)) return titled;
+  return titleFromUrl(webpageUrl) ?? (entry.id ? `Track ${entry.id}` : undefined);
+}
+
 function normalizeEntry(entry: RawEntry, fallbackUrl = ''): ResolvedTrackInfo | null {
-  const webpageUrl = entry.webpage_url ?? entry.url ?? fallbackUrl;
-  const title = entry.track ?? entry.title;
-  if (!webpageUrl || !title) return null;
+  const webpageUrl = resolveWebpageUrl(entry, fallbackUrl);
+  if (!webpageUrl) return null;
+  const title = resolveTitle(entry, webpageUrl);
+  if (!title) return null;
+  if (/^\[(deleted|private|unavailable)/i.test(title)) return null;
 
   return {
     sourceId: entry.id ?? webpageUrl,
@@ -314,6 +366,75 @@ function normalizeEntry(entry: RawEntry, fallbackUrl = ''): ResolvedTrackInfo | 
     webpageUrl,
     provider: detectProviderFromEntry(entry, fallbackUrl),
   };
+}
+
+function parseJsonOutput(stdout: string): unknown {
+  const trimmed = stdout.trim();
+  if (!trimmed || trimmed === 'null') return null;
+  const objectStart = trimmed.indexOf('{');
+  const arrayStart = trimmed.indexOf('[');
+  const start =
+    objectStart === -1 ? arrayStart : arrayStart === -1 ? objectStart : Math.min(objectStart, arrayStart);
+  if (start === -1) throw new Error('Could not read that playlist.');
+  return JSON.parse(trimmed.slice(start));
+}
+
+/** Turns a yt-dlp playlist dump into tracks. Exported so tests can cover SoundCloud's title-less entries. */
+export function listingFromDump(raw: unknown, sourceUrl: string, limit = MAX_PLAYLIST_TRACKS): PlaylistListing {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('That playlist did not contain any playable tracks.');
+  }
+
+  const parsed = raw as RawEntry;
+  const rawEntries = (parsed.entries ?? (parsed._type === 'playlist' ? [] : [parsed])).filter(
+    (entry): entry is RawEntry => entry !== null,
+  );
+  const tracks = rawEntries
+    .map((entry) => normalizeEntry(entry, sourceUrl))
+    .filter((entry): entry is ResolvedTrackInfo => entry !== null)
+    .filter((entry) => entry.webpageUrl !== sourceUrl)
+    .slice(0, limit);
+
+  if (tracks.length === 0) {
+    throw new Error('That playlist did not contain any playable tracks.');
+  }
+
+  const reportedCount = typeof parsed.playlist_count === 'number' ? parsed.playlist_count : undefined;
+
+  return {
+    title: parsed.title?.trim() || 'Playlist',
+    url: sourceUrl,
+    truncated: reportedCount !== undefined ? reportedCount > tracks.length : rawEntries.length > tracks.length,
+    tracks,
+  };
+}
+
+export interface PlaylistListing {
+  title: string;
+  url: string;
+  truncated: boolean;
+  tracks: ResolvedTrackInfo[];
+}
+
+/** Enumerates tracks in a YouTube playlist or SoundCloud set, without downloading. */
+export async function listPlaylist(
+  url: string,
+  options: { limit?: number; signal?: AbortSignal } = {},
+): Promise<PlaylistListing> {
+  const limit = Math.min(MAX_PLAYLIST_TRACKS, Math.max(1, options.limit ?? MAX_PLAYLIST_TRACKS));
+  const { stdout } = await ytDlp(
+    [
+      '--dump-single-json',
+      '--flat-playlist',
+      '--skip-download',
+      '--playlist-end',
+      String(limit),
+      url,
+    ],
+    { timeoutMs: 180_000, signal: options.signal, playlist: true },
+  );
+
+  return listingFromDump(parseJsonOutput(stdout), url, limit);
 }
 
 /** Text search against YouTube or SoundCloud. */
@@ -331,6 +452,7 @@ export async function search(
 
   const parsed = JSON.parse(stdout) as RawEntry;
   return (parsed.entries ?? [])
+    .filter((entry): entry is RawEntry => entry !== null)
     .map((entry) => normalizeEntry(entry))
     .filter((entry): entry is ResolvedTrackInfo => entry !== null);
 }
@@ -344,7 +466,8 @@ export async function inspect(url: string, signal?: AbortSignal): Promise<Resolv
 
   const parsed = JSON.parse(stdout) as RawEntry;
   // Some extractors return a playlist even with --no-playlist; take the first item.
-  const entry = parsed._type === 'playlist' ? parsed.entries?.[0] ?? parsed : parsed;
+  const first = parsed.entries?.find((item): item is RawEntry => item !== null);
+  const entry = parsed._type === 'playlist' ? first ?? parsed : parsed;
   const normalized = normalizeEntry(entry, url);
   if (!normalized) throw new Error('That link did not resolve to a playable track.');
   return normalized;

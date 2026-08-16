@@ -14,5 +14,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "electron/**/*.ts", "scripts/**/*.ts", "src/types.ts", "src/lib/mixEngine.ts"]
+  "include": ["server/**/*.ts", "electron/**/*.ts", "scripts/**/*.ts", "src/types.ts", "src/lib/mixEngine.ts", "src/lib/playlistUrl.ts"]
 }

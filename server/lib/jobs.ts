@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import type { MixRecord, RenderProgress, TrackInput, TrackRequest, Vibe } from '../../src/types.js';
 import { generateMixPlan, resolveVibe } from '../../src/lib/mixEngine.js';
-import { ingestTrack } from './ingest.js';
+import { expandTrackRequests, ingestTrack } from './ingest.js';
 import { paths } from './paths.js';
 import { renderMix } from './render.js';
 import { addMix } from './store.js';
@@ -97,14 +97,20 @@ async function execute(job: Job, request: MixJobRequest): Promise<void> {
   const { signal } = job.controller;
 
   try {
+    update(job, { stage: 'resolving', message: 'Reading the track list' });
+    const tracks = await expandTrackRequests(request.tracks, signal);
+    update(job, {
+      tracks: tracks.map((track) => ({ label: labelFor(track), status: 'pending' })),
+    });
+
     const ingested: TrackInput[] = [];
     const mediaPaths = new Map<string, string>();
     const failures: string[] = [];
 
-    for (let index = 0; index < request.tracks.length; index += 1) {
+    for (let index = 0; index < tracks.length; index += 1) {
       if (signal.aborted) throw new Error('Cancelled');
 
-      const trackRequest = request.tracks[index];
+      const trackRequest = tracks[index];
       const setStatus = (status: 'pending' | 'working' | 'ready' | 'error', detail?: string) => {
         const tracks = [...job.state.tracks];
         tracks[index] = { ...tracks[index], status, detail };
@@ -112,8 +118,8 @@ async function execute(job: Job, request: MixJobRequest): Promise<void> {
       };
 
       setStatus('working', 'Looking it up');
-      const baseProgress = (index / request.tracks.length) * INGEST_SHARE;
-      const slice = INGEST_SHARE / request.tracks.length;
+      const baseProgress = (index / tracks.length) * INGEST_SHARE;
+      const slice = INGEST_SHARE / tracks.length;
 
       try {
         const { track, reused, note } = await ingestTrack(trackRequest, {
@@ -134,7 +140,7 @@ async function execute(job: Job, request: MixJobRequest): Promise<void> {
             update(job, {
               stage: progress.phase === 'analyzing' ? 'analyzing' : 'downloading',
               progress: baseProgress + within * slice,
-              message: `${messages[progress.phase]} (${index + 1} of ${request.tracks.length})`,
+              message: `${messages[progress.phase]} (${index + 1} of ${tracks.length})`,
             });
           },
         });

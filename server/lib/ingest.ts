@@ -6,7 +6,15 @@ import { analyzeAudioFile } from './analyze.js';
 import { measureLoudness, transcodeToFlac } from './ffmpeg.js';
 import { paths } from './paths.js';
 import { findTrack, upsertTrack } from './store.js';
-import { download, inspect, search, type ResolvedTrackInfo } from './ytdlp.js';
+import {
+  download,
+  inspect,
+  isPlaylistUrl,
+  listPlaylist,
+  MAX_PLAYLIST_TRACKS,
+  search,
+  type ResolvedTrackInfo,
+} from './ytdlp.js';
 
 export interface IngestProgress {
   (update: { phase: 'resolving' | 'downloading' | 'transcoding' | 'analyzing'; fraction?: number; detail?: string }): void;
@@ -139,6 +147,86 @@ export async function resolveSource(request: TrackRequest, signal?: AbortSignal)
   return fromYtDlp(await inspect(url, signal));
 }
 
+function asSearchResult(result: ResolvedTrackInfo): SearchResult {
+  return {
+    sourceId: result.sourceId,
+    title: result.title,
+    artist: result.artist,
+    durationSeconds: result.durationSeconds,
+    thumbnail: result.thumbnail,
+    webpageUrl: result.webpageUrl,
+    provider: result.provider,
+  };
+}
+
+/** Reads a YouTube playlist or SoundCloud set into individual search-shaped tracks. */
+export async function loadPlaylist(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ title: string; truncated: boolean; limit: number; results: SearchResult[] }> {
+  if (!isHttpUrl(url)) throw new Error('That does not look like a link.');
+
+  const provider = detectProvider(url);
+  if (provider !== 'youtube' && provider !== 'soundcloud') {
+    throw new Error('Paste a YouTube or SoundCloud playlist link.');
+  }
+  if (!isPlaylistUrl(url)) {
+    throw new Error('That looks like a single track. Paste a playlist or set link instead.');
+  }
+
+  const listing = await listPlaylist(url, { signal });
+  const seen = new Set<string>();
+  const results: SearchResult[] = [];
+  for (const track of listing.tracks) {
+    if (seen.has(track.webpageUrl)) continue;
+    seen.add(track.webpageUrl);
+    results.push(asSearchResult(track));
+  }
+
+  return {
+    title: listing.title,
+    truncated: listing.truncated,
+    limit: MAX_PLAYLIST_TRACKS,
+    results,
+  };
+}
+
+/**
+ * Turns playlist links into one link per track so a mix job can ingest them
+ * the same way as songs added by hand.
+ */
+export async function expandTrackRequests(
+  requests: TrackRequest[],
+  signal?: AbortSignal,
+): Promise<TrackRequest[]> {
+  const expanded: TrackRequest[] = [];
+  const seen = new Set<string>();
+
+  const push = (request: TrackRequest) => {
+    const key =
+      request.kind === 'link'
+        ? `link:${request.url}`
+        : request.kind === 'query'
+          ? `query:${request.provider}:${request.query}`
+          : `local:${request.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    expanded.push(request);
+  };
+
+  for (const request of requests) {
+    if (request.kind === 'link' && isPlaylistUrl(request.url)) {
+      const listing = await listPlaylist(request.url, { signal });
+      for (const track of listing.tracks) push({ kind: 'link', url: track.webpageUrl });
+      continue;
+    }
+    push(request);
+  }
+
+  if (expanded.length === 0) throw new Error('That playlist did not contain any playable tracks.');
+  return expanded;
+}
+
 /** Text search surfaced to the UI, with results shaped for display. */
 export async function searchTracks(
   query: string,
@@ -147,15 +235,7 @@ export async function searchTracks(
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const results = await search(query, provider, limit, signal);
-  return results.map((result) => ({
-    sourceId: result.sourceId,
-    title: result.title,
-    artist: result.artist,
-    durationSeconds: result.durationSeconds,
-    thumbnail: result.thumbnail,
-    webpageUrl: result.webpageUrl,
-    provider: result.provider,
-  }));
+  return results.map(asSearchResult);
 }
 
 /**

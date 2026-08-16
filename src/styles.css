@@ -429,6 +429,27 @@ input:disabled {
   border-top: 1px solid var(--panel-border);
 }
 
+.playlist-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.playlist-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.playlist-row input {
+  flex: 1;
+}
+
+.playlist-row .ghost-button {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
