@@ -361,15 +361,188 @@ export function eqFiltersFor(vibe: Vibe): string[] {
 }
 
 /**
- * Maps the written transition style onto an acrossfade curve. Quarter-sine is
- * the default because it holds constant power through the blend.
+ * Maps the written transition style onto an acrossfade curve.
+ *
+ * Every option here holds roughly constant power across the blend. Curves like
+ * `exp` and `log` are equal-*gain*: two unrelated tracks summed through one dip
+ * by about 3 dB halfway through, which is the audible sag that makes a
+ * crossfade sound like a mistake rather than a mix.
  */
 export function crossfadeCurveFor(style: string): string {
   const normalized = style.toLowerCase();
-  if (normalized.includes('cut')) return 'exp';
-  if (normalized.includes('dissolve')) return 'hsin';
-  if (normalized.includes('fade')) return 'log';
+  // A cut is short and percussive, so the steeper of the constant-power pair
+  // gets the outgoing track out of the way quickly.
+  if (normalized.includes('cut')) return 'qsin';
+  if (normalized.includes('dissolve') || normalized.includes('fade')) return 'hsin';
   return 'qsin';
+}
+
+/** 4/4 is assumed throughout: every blend is a whole number of four-beat bars. */
+export const BEATS_PER_BAR = 4;
+
+/**
+ * Widest time-stretch used to beat-match a track. Past roughly this much the
+ * stretch stops being transparent, so the track keeps its own tempo instead.
+ */
+const MAX_TEMPO_STRETCH = 1.08;
+
+/** Tempos are folded into this octave, so a 76 BPM track can lock to a 152 BPM set. */
+const TEMPO_FOLD_MIN = 82;
+
+/** Below this the tempo estimate is too weak to beat-match against. */
+const MIN_TEMPO_CONFIDENCE = 0.3;
+
+/** Fewer beats than this and there is no grid worth aligning to. */
+const MIN_TRACKED_BEATS = 8;
+
+/** Collapses a tempo into a single octave so half-time tracks can still match. */
+export function foldTempo(bpm: number): number {
+  if (!Number.isFinite(bpm) || bpm <= 0) return 0;
+  let folded = bpm;
+  while (folded < TEMPO_FOLD_MIN) folded *= 2;
+  while (folded >= TEMPO_FOLD_MIN * 2) folded /= 2;
+  return folded;
+}
+
+/** The tracked beat grid, or null when this track has none worth using. */
+function beatGrid(analysis: TrackAnalysis): number[] | null {
+  const beats = analysis.beatTimes;
+  return beats && beats.length >= MIN_TRACKED_BEATS ? beats : null;
+}
+
+/** Index of the beat closest to `second`. The grid is ascending, so binary search. */
+function nearestBeatIndex(beats: number[], second: number): number {
+  let low = 0;
+  let high = beats.length - 1;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (beats[middle] < second) low = middle + 1;
+    else high = middle;
+  }
+  if (low > 0 && Math.abs(beats[low - 1] - second) <= Math.abs(beats[low] - second)) return low - 1;
+  return low;
+}
+
+/** Index of the first beat at or after `second`, or -1 when there is none. */
+function beatIndexAtOrAfter(beats: number[], second: number): number {
+  const nearest = nearestBeatIndex(beats, second);
+  if (beats[nearest] >= second - 1e-9) return nearest;
+  return nearest + 1 < beats.length ? nearest + 1 : -1;
+}
+
+/**
+ * One tempo for the whole set, so every track's bars are the same length and a
+ * blend that starts locked stays locked. Tracks that cannot be stretched to it
+ * keep their own tempo and simply do not get beat-matched.
+ */
+export function chooseSetTempo(tracks: TrackInput[]): number | null {
+  const candidates = tracks
+    .filter((track) => beatGrid(track.analysis) && track.analysis.bpmConfidence >= MIN_TEMPO_CONFIDENCE)
+    .map((track) => foldTempo(track.analysis.bpm))
+    .filter((bpm) => bpm > 0)
+    .sort((left, right) => left - right);
+
+  if (candidates.length === 0) return null;
+  // Lower median, so the choice is deterministic for an even count.
+  return candidates[Math.floor((candidates.length - 1) / 2)];
+}
+
+/**
+ * Playback rate that puts this track on the set tempo, or null when it cannot
+ * get there without an audible stretch. Null and a ratio of 1 mean different
+ * things: the first says this track will never be locked to its neighbours.
+ */
+export function tempoRatioFor(analysis: TrackAnalysis, setTempo: number | null): number | null {
+  if (!setTempo || !beatGrid(analysis) || analysis.bpmConfidence < MIN_TEMPO_CONFIDENCE) return null;
+
+  const folded = foldTempo(analysis.bpm);
+  if (folded <= 0) return null;
+
+  const ratio = setTempo / folded;
+  if (ratio > MAX_TEMPO_STRETCH || ratio < 1 / MAX_TEMPO_STRETCH) return null;
+  return Math.round(ratio * 10_000) / 10_000;
+}
+
+/** Which beat of the bar the tracked grid treats as the downbeat. */
+function downbeatPhase(beats: number[], analysis: TrackAnalysis): number {
+  const origin = nearestBeatIndex(beats, analysis.beatOffsetSeconds);
+  return ((origin % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+}
+
+/** First downbeat at or after `second`, or -1 when the grid runs out. */
+function downbeatIndexAtOrAfter(beats: number[], second: number, analysis: TrackAnalysis): number {
+  const startIndex = beatIndexAtOrAfter(beats, second);
+  if (startIndex === -1) return -1;
+
+  const phase = downbeatPhase(beats, analysis);
+  const remainder = (((startIndex - phase) % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+  const aligned = remainder === 0 ? startIndex : startIndex + (BEATS_PER_BAR - remainder);
+  return aligned < beats.length ? aligned : -1;
+}
+
+/**
+ * Moves a play window onto the beat grid: it starts on a downbeat and lasts a
+ * whole number of bars. Starting on a downbeat lines the incoming kick *and*
+ * snare up with the outgoing phrase; a whole number of bars keeps that lock
+ * for the length of the blend.
+ */
+function alignWindowToBeats(
+  analysis: TrackAnalysis,
+  startSecond: number,
+  endSecond: number,
+): { start: number; end: number } | null {
+  const beats = beatGrid(analysis);
+  if (!beats) return null;
+
+  // Only ever move the start forward: reaching back would pull in material the
+  // planner deliberately skipped.
+  const startIndex = downbeatIndexAtOrAfter(beats, startSecond, analysis);
+  if (startIndex === -1) return null;
+
+  const available = beats.length - 1 - startIndex;
+  let beatCount = Math.round((nearestBeatIndex(beats, endSecond) - startIndex) / BEATS_PER_BAR) * BEATS_PER_BAR;
+  beatCount = Math.min(beatCount, Math.floor(available / BEATS_PER_BAR) * BEATS_PER_BAR);
+
+  // The tracked grid can end before the file does, and the last beat can sit
+  // fractionally past the decoded length.
+  while (beatCount >= BEATS_PER_BAR && beats[startIndex + beatCount] > analysis.durationSeconds) {
+    beatCount -= BEATS_PER_BAR;
+  }
+  if (beatCount < BEATS_PER_BAR) return null;
+
+  return { start: beats[startIndex], end: beats[startIndex + beatCount] };
+}
+
+/**
+ * Rounds a blend to whole bars, preferring a length the vibe still asked for.
+ * A blend that is not a whole number of bars puts the two tracks a fraction of
+ * a beat apart for its entire length, which is the classic smeared handover.
+ */
+function quantizeBlendToBars(seconds: number, barSeconds: number, min: number, max: number): number {
+  if (barSeconds <= 0) return seconds;
+
+  const bars = Math.max(1, Math.round(seconds / barSeconds));
+  for (const candidate of [bars, bars - 1, bars + 1, bars - 2, bars + 2]) {
+    if (candidate < 1) continue;
+    const length = candidate * barSeconds;
+    if (length >= min && length <= max) return length;
+  }
+  return bars * barSeconds;
+}
+
+/** Explains a blend in bars once it is locked to the grid, and in seconds when it is not. */
+function describeBlend(
+  lengthSeconds: number,
+  barSeconds: number,
+  locked: boolean,
+  analysis: TrackAnalysis,
+): string {
+  const rounded = Math.round(lengthSeconds * 10) / 10;
+  if (locked && barSeconds > 0) {
+    const bars = Math.max(1, Math.round(lengthSeconds / barSeconds));
+    return `Rides in over ${bars} bar${bars === 1 ? '' : 's'} (${rounded}s), beat-locked in ${analysis.key}.`;
+  }
+  return `Rides in over ${rounded}s at ${analysis.bpm} BPM in ${analysis.key}.`;
 }
 
 const orderRank = (analysis: TrackAnalysis, vibe: Vibe) => {
@@ -615,13 +788,25 @@ export function generateMixPlan({
 
   const ordered = orderTracks(tracks, vibe);
 
+  // One tempo for the set, and the rate each track needs to sit on it. Beats
+  // only stay aligned for the length of a blend if both sides run at the same
+  // tempo, so this has to be settled before anything is measured in bars.
+  const setTempo = chooseSetTempo(ordered);
+  const matched = ordered.map((track) => tempoRatioFor(track.analysis, setTempo));
+  const tempoRatios = matched.map((ratio) => ratio ?? 1);
+  const barSeconds = setTempo ? (60 / setTempo) * BEATS_PER_BAR : 0;
+  /** A blend is only worth measuring in bars when both sides run at the set tempo. */
+  const beatLocked = (index: number) => matched[index] !== null && matched[index + 1] !== null;
+
   // Blend lengths depend only on tempo and vibe, so they can be costed before
   // any material is allocated. Every crossfade removes its own length from the
   // finished runtime, so the tracks have to supply the target plus the overlaps
   // or the mix always lands short of what was asked for.
-  const rawLengths = ordered
-    .slice(0, -1)
-    .map((track, index) => buildTransitionLength(track.analysis, ordered[index + 1].analysis, vibe));
+  const [rangeMin, rangeMax] = vibeProfiles[vibe].transitionRange;
+  const rawLengths = ordered.slice(0, -1).map((track, index) => {
+    const length = buildTransitionLength(track.analysis, ordered[index + 1].analysis, vibe);
+    return beatLocked(index) ? quantizeBlendToBars(length, barSeconds, rangeMin, rangeMax) : length;
+  });
   const overlapBudget = rawLengths.reduce((sum, length) => sum + length, 0);
 
   const hasTarget = Boolean(targetMinutes) && Number.isFinite(targetMinutes) && (targetMinutes as number) > 0;
@@ -633,20 +818,35 @@ export function generateMixPlan({
     const windows = ordered.map((track, index) => {
       const analysis = track.analysis;
       const maxStart = Math.max(0, analysis.durationSeconds - Math.min(allocations[index], analysis.durationSeconds));
-      const startOffsetSeconds = clamp(analysis.introSecond, 0, maxStart);
-      const endOffsetSeconds = snapEnd(analysis, startOffsetSeconds, allocations[index]);
+      const rawStart = clamp(analysis.introSecond, 0, maxStart);
+      const rawEnd = snapEnd(analysis, rawStart, allocations[index]);
+
+      // Snap to the grid last, so landing on a beat outranks landing on the
+      // quietest moment. A blend that starts a fraction of a beat late is the
+      // thing that sounds broken; a blend that starts a bar early is not.
+      const aligned = alignWindowToBeats(analysis, rawStart, rawEnd);
+      const startOffsetSeconds = aligned?.start ?? rawStart;
+      const endOffsetSeconds = aligned?.end ?? rawEnd;
+      const tempoRatio = tempoRatios[index];
+
       return {
         startOffsetSeconds,
         endOffsetSeconds,
-        // The window and its length must agree exactly: the renderer seeks with
-        // one and reads with the other.
-        playDurationSeconds: endOffsetSeconds - startOffsetSeconds,
+        tempoRatio,
+        // The window is source seconds; the timeline is measured after the
+        // stretch, which is what the renderer places and the chapters follow.
+        playDurationSeconds: (endOffsetSeconds - startOffsetSeconds) / tempoRatio,
       };
     });
 
+    // normalizeTransitions works in whole seconds, so re-seat the survivors on
+    // the bar grid. Only ever downwards, which cannot break the fit it just
+    // guaranteed; a blend with no room for a full bar becomes a cut on the beat.
     const lengths = normalizeTransitions(
       windows.map((window) => window.playDurationSeconds),
       rawLengths,
+    ).map((length, index) =>
+      beatLocked(index) && barSeconds > 0 ? Math.floor(length / barSeconds + 1e-6) * barSeconds : length,
     );
     const total =
       windows.reduce((sum, window) => sum + window.playDurationSeconds, 0) -
@@ -690,9 +890,19 @@ export function generateMixPlan({
         ? Math.round(clamp(TARGET_LUFS - measuredLufs, -12, 12) * 10) / 10
         : 0;
 
+    const tempoRatio = window.tempoRatio;
     const notes = [
       `Average energy ${Math.round(analysis.averageEnergy * 100)}%, brightness ${Math.round(analysis.averageBrightness * 100)}%.`,
     ];
+    if (matched[index] !== null && setTempo) {
+      notes.push(
+        tempoRatio === 1
+          ? `Already on the set tempo of ${Math.round(setTempo)} BPM.`
+          : `Beat-matched to ${Math.round(setTempo)} BPM (${tempoRatio > 1 ? '+' : ''}${Math.round((tempoRatio - 1) * 1000) / 10}% tempo).`,
+      );
+    } else if (setTempo && (incoming > 0 || outgoing > 0)) {
+      notes.push(`Too far from ${Math.round(setTempo)} BPM to beat-match, so it plays at its own tempo.`);
+    }
     if (analysis.bpmConfidence < 0.35) {
       notes.push(`Tempo is an estimate; ${analysis.bpm} BPM was a weak match.`);
     }
@@ -713,6 +923,7 @@ export function generateMixPlan({
       playDurationSeconds: window.playDurationSeconds,
       startOffsetSeconds: window.startOffsetSeconds,
       endOffsetSeconds: window.endOffsetSeconds,
+      tempoRatio,
       eqProfile: vibeProfiles[vibe].eq,
       gainDb,
       mixStartSeconds,
@@ -720,17 +931,19 @@ export function generateMixPlan({
       transitionIn:
         incoming > 0
           ? {
+              // Blend lengths are timeline seconds; the span they cover inside
+              // the source is that much longer when the track is stretched.
               fromSecond: window.startOffsetSeconds,
-              toSecond: window.startOffsetSeconds + incoming,
+              toSecond: window.startOffsetSeconds + incoming * tempoRatio,
               lengthSeconds: incoming,
               style: vibeProfiles[vibe].transitionStyle,
-              reason: `Rides in over ${incoming}s at ${analysis.bpm} BPM in ${analysis.key}.`,
+              reason: describeBlend(incoming, barSeconds, matched[index] !== null && matched[index - 1] !== null, analysis),
             }
           : undefined,
       transitionOut:
         outgoing > 0
           ? {
-              fromSecond: window.endOffsetSeconds - outgoing,
+              fromSecond: window.endOffsetSeconds - outgoing * tempoRatio,
               toSecond: window.endOffsetSeconds,
               lengthSeconds: outgoing,
               style: vibeProfiles[vibe].transitionStyle,
@@ -769,6 +982,17 @@ export function generateMixPlan({
     warnings.push('A single track has nothing to blend into, so this renders as a straight edit.');
   }
 
+  if (setTempo) {
+    const unmatched = matched.filter((ratio) => ratio === null).length;
+    if (unmatched > 0 && planTracks.length > 1) {
+      warnings.push(
+        `${unmatched} track${unmatched === 1 ? ' is' : 's are'} too far from ${Math.round(setTempo)} BPM to beat-match, so their blends are not locked to the grid.`,
+      );
+    }
+  } else if (planTracks.length > 1) {
+    warnings.push('No usable beat grid was found, so blends fall back to energy-based fades rather than beat-matching.');
+  }
+
   const weakTempo = planTracks.filter((_, index) => ordered[index].analysis.bpmConfidence < 0.35).length;
   if (weakTempo > 0) {
     warnings.push(`${weakTempo} track${weakTempo === 1 ? '' : 's'} had an unclear tempo, so blend lengths there are a best guess.`);
@@ -792,6 +1016,13 @@ export function generateMixPlan({
 export const formatMegabytes = (bytes: number | undefined, decimals = 1) => {
   if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '—';
   return `${(bytes / 1_048_576).toFixed(decimals)} MB`;
+};
+
+/** Tempos are measured, so they arrive with decimals nobody needs to read. */
+export const formatBpm = (bpm: number) => {
+  if (!Number.isFinite(bpm) || bpm <= 0) return '—';
+  const rounded = Math.round(bpm * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 };
 
 export const formatSeconds = (seconds: number) => {

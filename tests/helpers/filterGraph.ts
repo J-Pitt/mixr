@@ -162,6 +162,13 @@ export function parseInputArgs(args: string[]): ParsedInput[] {
   return inputs;
 }
 
+/**
+ * The subset whose two sides sum to roughly constant power, which is what
+ * unrelated tracks need. Equal-gain curves (tri, exp, log, and friends) dip in
+ * the middle of the blend.
+ */
+export const CONSTANT_POWER_CURVES = ['qsin', 'hsin', 'esin'];
+
 /** Curve names ffmpeg's acrossfade actually accepts. */
 export const ACROSSFADE_CURVES = new Set([
   'tri', 'qsin', 'hsin', 'esin', 'log', 'ipar', 'qua', 'cub', 'squ', 'cbr', 'par', 'exp',

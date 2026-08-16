@@ -22,6 +22,7 @@
     "check:search": "tsx scripts/checkSearch.ts",
     "check:ingest": "tsx scripts/checkIngest.ts",
     "check:analysis": "tsx scripts/checkAnalysis.ts",
+    "check:beatmatch": "tsx scripts/checkBeatMatch.ts",
     "check:render": "tsx scripts/checkRender.ts",
     "check:api": "node scripts/checkApi.mjs",
     "test": "vitest run",

@@ -61,7 +61,7 @@ describe('buildMixFilterGraph', () => {
   });
 
   it('uses the curve the vibe asks for', () => {
-    expect(buildMixFilterGraph(makeSegments(2), 'Festival').filterComplex).toContain('c1=exp:c2=exp');
+    expect(buildMixFilterGraph(makeSegments(2), 'Festival').filterComplex).toContain('c1=qsin:c2=qsin');
     expect(buildMixFilterGraph(makeSegments(2), 'Ambient').filterComplex).toContain('c1=hsin:c2=hsin');
   });
 
@@ -98,8 +98,8 @@ describe('buildMixFilterGraph', () => {
             // Either a raw ffmpeg input stream, or something an earlier chain made.
             expect(/^\[\d+:a\]$/.test(label) || produced.has(label)).toBe(true);
           }
-          const output = chain.match(/\[[a-z0-9]+\]$/)?.[0];
-          if (output) produced.add(output);
+          const outputs = chain.match(/(\[[a-z0-9]+\])+$/)?.[0].match(/\[[a-z0-9]+\]/g) ?? [];
+          for (const output of outputs) produced.add(output);
         }
 
         expect(produced.has(graph.outputLabel)).toBe(true);

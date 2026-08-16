@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, mediaUrl } from '../lib/api';
-import { formatMegabytes, formatSeconds } from '../lib/mixEngine';
+import { formatBpm, formatMegabytes, formatSeconds } from '../lib/mixEngine';
 import { MixPlayer } from './MixPlayer';
 import type { LibrarySnapshot, MixRecord } from '../types';
 
@@ -125,7 +125,7 @@ export function LibraryView({ library, onRefresh }: LibraryViewProps) {
                     {track.artist ? <em> — {track.artist}</em> : null}
                   </span>
                 </span>
-                <span>{track.analysis.bpm}</span>
+                <span>{formatBpm(track.analysis.bpm)}</span>
                 <span>{track.analysis.key}</span>
                 <span>{formatSeconds(track.analysis.durationSeconds)}</span>
                 <span>{formatMegabytes(track.sizeBytes)}</span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { internals } from '../server/lib/analyze.js';
+import { ANALYSIS_VERSION, internals, isAnalysisCurrent } from '../server/lib/analyze.js';
 import type { EnergySlice } from '../src/types.js';
 import { makeRng } from './helpers/fixtures.js';
 
@@ -28,11 +28,102 @@ function tone(frequencies: number[], seconds: number, sampleRate = SAMPLE_RATE):
   return samples;
 }
 
+const FRAME_RATE = SAMPLE_RATE / 512;
+
+const beatsOf = (samples: Float32Array, bpm: number) =>
+  internals.trackBeats(internals.onsetEnvelope(samples), FRAME_RATE, bpm);
+
 const slice = (second: number, energy: number, brightness = 0.5, transitionScore = 0.5): EnergySlice => ({
   second,
   energy,
   brightness,
   transitionScore,
+});
+
+describe('trackBeats', () => {
+  it.each([90, 120, 128, 174])('follows a %s BPM pulse all the way through', (bpm) => {
+    const beats = beatsOf(clickTrain(bpm, 60), bpm);
+    const period = 60 / bpm;
+
+    expect(beats.length).toBeGreaterThan((60 / period) * 0.9);
+    for (let index = 1; index < beats.length; index += 1) {
+      expect(beats[index] - beats[index - 1]).toBeCloseTo(period, 1);
+    }
+  });
+
+  // The whole reason for tracking rather than extrapolating: the grid still has
+  // to be right at the end of the track, where transitions actually happen.
+  it('is still on the beat two minutes in', () => {
+    const bpm = 128;
+    const period = 60 / bpm;
+    const beats = beatsOf(clickTrain(bpm, 130), bpm);
+    const last = beats[beats.length - 1];
+
+    const offBy = Math.abs(last / period - Math.round(last / period)) * period;
+    expect(offBy, `last beat at ${last}s is ${offBy}s off the grid`).toBeLessThan(0.03);
+  });
+
+  it('lands on the clicks rather than between them', () => {
+    const beats = beatsOf(clickTrain(120, 40), 120);
+    for (const beat of beats) {
+      const offBy = Math.abs(beat / 0.5 - Math.round(beat / 0.5)) * 0.5;
+      expect(offBy).toBeLessThan(0.04);
+    }
+  });
+
+  it('returns nothing rather than inventing a grid', () => {
+    expect(beatsOf(new Float32Array(SAMPLE_RATE * 30), 120)).toEqual([]);
+    expect(beatsOf(new Float32Array(64), 120)).toEqual([]);
+    expect(beatsOf(clickTrain(120, 60), 0)).toEqual([]);
+    expect(beatsOf(clickTrain(120, 60), Number.NaN)).toEqual([]);
+  });
+
+  it('produces an ascending grid of finite times inside the track', () => {
+    const beats = beatsOf(clickTrain(112, 45), 112);
+    expect(beats.length).toBeGreaterThan(0);
+    for (let index = 0; index < beats.length; index += 1) {
+      expect(Number.isFinite(beats[index])).toBe(true);
+      expect(beats[index]).toBeGreaterThanOrEqual(0);
+      expect(beats[index]).toBeLessThanOrEqual(45);
+      if (index > 0) expect(beats[index]).toBeGreaterThan(beats[index - 1]);
+    }
+  });
+});
+
+describe('tempoFromBeats', () => {
+  it.each([90, 120, 128, 174])('recovers %s BPM from the grid it tracked', (bpm) => {
+    expect(internals.tempoFromBeats(beatsOf(clickTrain(bpm, 60), bpm))!).toBeCloseTo(bpm, 0);
+  });
+
+  it('is unmoved by a single dropped beat', () => {
+    const beats = Array.from({ length: 40 }, (_unused, index) => index * 0.5);
+    beats.splice(20, 1);
+    expect(internals.tempoFromBeats(beats)!).toBeCloseTo(120, 1);
+  });
+
+  it('declines when there is nothing to measure', () => {
+    expect(internals.tempoFromBeats([])).toBeNull();
+    expect(internals.tempoFromBeats([0, 0.5, 1])).toBeNull();
+    // Spacings all over the place, so no tempo is defensible.
+    expect(internals.tempoFromBeats([0, 0.2, 0.9, 1.0, 2.4, 2.5, 4.1, 4.2, 6.6, 6.7])).toBeNull();
+  });
+
+  it('refuses a tempo outside the range a pulse can sit in', () => {
+    expect(internals.tempoFromBeats(Array.from({ length: 20 }, (_unused, index) => index * 3))).toBeNull();
+  });
+});
+
+describe('isAnalysisCurrent', () => {
+  it('treats an unversioned analysis as stale so it gets re-run', () => {
+    expect(isAnalysisCurrent(undefined)).toBe(false);
+    expect(isAnalysisCurrent({ bpm: 120 } as never)).toBe(false);
+    expect(isAnalysisCurrent({ bpm: 120, version: ANALYSIS_VERSION - 1 } as never)).toBe(false);
+  });
+
+  it('accepts an analysis from this build or a later one', () => {
+    expect(isAnalysisCurrent({ bpm: 120, version: ANALYSIS_VERSION } as never)).toBe(true);
+    expect(isAnalysisCurrent({ bpm: 120, version: ANALYSIS_VERSION + 1 } as never)).toBe(true);
+  });
 });
 
 describe('normalizeSeries', () => {

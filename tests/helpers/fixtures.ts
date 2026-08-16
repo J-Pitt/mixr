@@ -33,6 +33,33 @@ export function makeSlices({ seconds, baseEnergy = 0.6, baseBrightness = 0.5, rn
   });
 }
 
+/**
+ * A beat grid like the tracker produces: an arbitrary starting phase, a slight
+ * wobble, and beats that stop short of the end of the file.
+ */
+export function makeBeatTimes({
+  bpm = 124,
+  durationSeconds = 240,
+  offsetSeconds = 0.37,
+  wobbleSeconds = 0,
+  rng,
+}: {
+  bpm?: number;
+  durationSeconds?: number;
+  offsetSeconds?: number;
+  wobbleSeconds?: number;
+  rng?: () => number;
+} = {}): number[] {
+  const next = rng ?? makeRng(11);
+  const period = 60 / bpm;
+  const beats: number[] = [];
+  for (let second = offsetSeconds; second <= durationSeconds - period; second += period) {
+    const wobble = wobbleSeconds === 0 ? 0 : (next() - 0.5) * 2 * wobbleSeconds;
+    beats.push(Math.round(Math.max(0, second + wobble) * 1000) / 1000);
+  }
+  return beats;
+}
+
 export function makeAnalysis(overrides: Partial<TrackAnalysis> = {}): TrackAnalysis {
   const durationSeconds = overrides.durationSeconds ?? 240;
   const wholeSeconds = Math.max(1, Math.floor(durationSeconds));
@@ -42,12 +69,16 @@ export function makeAnalysis(overrides: Partial<TrackAnalysis> = {}): TrackAnaly
   const averageBrightness = overrides.averageBrightness ?? 0.5;
 
   return {
+    version: overrides.version,
     durationSeconds,
     usableDurationSeconds:
       overrides.usableDurationSeconds ?? Math.max(1, Math.min(durationSeconds, outroSecond - introSecond)),
     bpm: overrides.bpm ?? 124,
     bpmConfidence: overrides.bpmConfidence ?? 0.8,
     beatOffsetSeconds: overrides.beatOffsetSeconds ?? 0.25,
+    // Absent by default: most fixtures predate beat tracking, and the planner
+    // has to keep working for tracks whose pulse could not be followed.
+    beatTimes: overrides.beatTimes,
     key: overrides.key ?? 'Am',
     keyConfidence: overrides.keyConfidence ?? 0.7,
     averageEnergy,
@@ -117,7 +148,9 @@ export function makeSegment(overrides: Partial<RenderSegment> = {}): RenderSegme
     startOffsetSeconds: overrides.startOffsetSeconds ?? 12,
     playDurationSeconds: overrides.playDurationSeconds ?? 180,
     gainDb: overrides.gainDb ?? 0,
+    transitionInSeconds: overrides.transitionInSeconds,
     transitionOutSeconds: overrides.transitionOutSeconds ?? 8,
+    tempoRatio: overrides.tempoRatio,
   };
 }
 
@@ -129,6 +162,7 @@ export function makeSegments(count: number, transitionSeconds = 8): RenderSegmen
       startOffsetSeconds: index * 3,
       playDurationSeconds: 120 + index * 10,
       gainDb: index % 2 === 0 ? 0 : -1.5,
+      transitionInSeconds: index === 0 ? 0 : transitionSeconds,
       transitionOutSeconds: index === count - 1 ? 0 : transitionSeconds,
     }),
   );

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IngestedTrack, Provider, SearchResult, TrackRequest } from '../../src/types.js';
-import { analyzeAudioFile } from './analyze.js';
+import { analyzeAudioFile, isAnalysisCurrent } from './analyze.js';
 import { measureLoudness, transcodeToFlac } from './ffmpeg.js';
 import { paths } from './paths.js';
 import { findTrack, upsertTrack } from './store.js';
@@ -259,8 +259,11 @@ export async function ingestTrack(
   onProgress?.({ phase: 'resolving' });
   const source = await resolveSource(request, signal);
 
+  // A stale analysis still has its audio on disk, so re-running it only costs
+  // the analysis pass. Reusing it instead would silently drop the track out of
+  // beat-matching for the rest of the library's life.
   const existing = findTrack(source.fingerprint);
-  if (existing && fs.existsSync(path.join(paths.media, existing.mediaFile))) {
+  if (existing && fs.existsSync(path.join(paths.media, existing.mediaFile)) && isAnalysisCurrent(existing.analysis)) {
     return { track: existing, reused: true, note: source.note };
   }
 

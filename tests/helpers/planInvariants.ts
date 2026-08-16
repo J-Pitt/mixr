@@ -3,6 +3,7 @@ import type { MixPlan, TrackInput } from '../../src/types.js';
 export type ViolationKind =
   | 'window-identity'
   | 'window-bounds'
+  | 'beat-alignment'
   | 'total-duration'
   | 'mix-start-chain'
   | 'crossfade-feasibility'
@@ -18,6 +19,11 @@ export interface Violation {
 
 const ROUNDING_TOLERANCE = 1;
 const EXACT_TOLERANCE = 1e-6;
+
+/** Index of the beat sitting exactly on `second`, or -1 when none does. */
+function beatIndexAt(beats: number[], second: number): number {
+  return beats.findIndex((beat) => Math.abs(beat - second) <= EXACT_TOLERANCE);
+}
 
 /**
  * Every structural property the renderer, the chapter writer, and the UI
@@ -41,12 +47,19 @@ export function collectPlanViolations(plan: MixPlan, inputs: TrackInput[]): Viol
     const incoming = track.transitionIn?.lengthSeconds ?? 0;
     const outgoing = track.transitionOut?.lengthSeconds ?? 0;
 
+    // playDurationSeconds is timeline time and the window is source time, so on
+    // a beat-matched track they differ by exactly the tempo ratio. The renderer
+    // reads one and places the other, so the two must agree through it.
+    const tempoRatio = track.tempoRatio ?? 1;
     const windowLength = track.endOffsetSeconds - track.startOffsetSeconds;
-    if (Math.abs(track.playDurationSeconds - windowLength) > EXACT_TOLERANCE) {
+    if (Math.abs(track.playDurationSeconds * tempoRatio - windowLength) > EXACT_TOLERANCE) {
       add(
         'window-identity',
-        `${label}: playDurationSeconds ${track.playDurationSeconds} !== endOffsetSeconds ${track.endOffsetSeconds} - startOffsetSeconds ${track.startOffsetSeconds} (${windowLength})`,
+        `${label}: playDurationSeconds ${track.playDurationSeconds} x tempoRatio ${tempoRatio} !== endOffsetSeconds ${track.endOffsetSeconds} - startOffsetSeconds ${track.startOffsetSeconds} (${windowLength})`,
       );
+    }
+    if (!(tempoRatio > 0) || !Number.isFinite(tempoRatio)) {
+      add('window-identity', `${label}: tempoRatio ${tempoRatio} is not a usable playback rate`);
     }
 
     if (track.startOffsetSeconds < 0) {
@@ -74,6 +87,25 @@ export function collectPlanViolations(plan: MixPlan, inputs: TrackInput[]): Viol
     }
     if (incoming < 0 || outgoing < 0) {
       add('crossfade-feasibility', `${label}: negative transition length in=${incoming} out=${outgoing}`);
+    }
+
+    // Alignment is all-or-nothing. A window with one edge on the grid and one
+    // off it drifts by that difference for the whole blend, which is worse than
+    // not aligning at all.
+    const beats = source?.analysis.beatTimes;
+    if (beats && beats.length >= 8) {
+      const startBeat = beatIndexAt(beats, track.startOffsetSeconds);
+      const endBeat = beatIndexAt(beats, track.endOffsetSeconds);
+      if (startBeat !== -1 || endBeat !== -1) {
+        if (startBeat === -1 || endBeat === -1) {
+          add(
+            'beat-alignment',
+            `${label}: window ${track.startOffsetSeconds}..${track.endOffsetSeconds} has only one edge on the beat grid`,
+          );
+        } else if ((endBeat - startBeat) % 4 !== 0) {
+          add('beat-alignment', `${label}: window spans ${endBeat - startBeat} beats, which is not whole bars`);
+        }
+      }
     }
 
     if (index === 0 && track.transitionIn) {

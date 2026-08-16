@@ -57,6 +57,8 @@ export interface EnergySlice {
 }
 
 export interface TrackAnalysis {
+  /** Pipeline version. Absent on analyses cached before versioning existed. */
+  version?: number;
   durationSeconds: number;
   usableDurationSeconds: number;
   bpm: number;
@@ -64,6 +66,12 @@ export interface TrackAnalysis {
   bpmConfidence: number;
   /** Phase of the first beat, so play windows can snap to the grid. */
   beatOffsetSeconds: number;
+  /**
+   * Every tracked beat, in seconds. Blends are cut and matched against this
+   * rather than an extrapolated grid, which has drifted by whole beats by the
+   * time a track reaches its outro. Empty when the pulse could not be followed.
+   */
+  beatTimes?: number[];
   key: string;
   /** 0..1 correlation strength of the winning key profile. */
   keyConfidence: number;
@@ -129,8 +137,13 @@ export interface TrackInput {
 }
 
 export interface MixTransition {
+  /** Position inside the source track, so the UI can draw it on the waveform. */
   fromSecond: number;
   toSecond: number;
+  /**
+   * Length on the mix timeline, which is what the renderer crossfades over. On
+   * a time-stretched track this is shorter than `toSecond - fromSecond`.
+   */
   lengthSeconds: number;
   style: string;
   reason: string;
@@ -143,9 +156,19 @@ export interface MixPlanTrack {
   provider: Provider;
   bpm: number;
   key: string;
+  /**
+   * Length on the mix timeline. The source window is `playDurationSeconds *
+   * tempoRatio` long, which differs once a track is stretched to the set tempo.
+   */
   playDurationSeconds: number;
   startOffsetSeconds: number;
   endOffsetSeconds: number;
+  /**
+   * Playback rate applied so this track shares the set tempo. 1 means it plays
+   * at its own tempo, either because it already matches or because matching it
+   * would need more stretch than stays transparent.
+   */
+  tempoRatio?: number;
   eqProfile: string;
   /** Gain applied so every track sits at the same perceived loudness. */
   gainDb?: number;

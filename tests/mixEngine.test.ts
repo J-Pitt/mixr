@@ -363,14 +363,14 @@ describe('vibe audio mapping', () => {
   });
 
   it('maps transition styles onto sensible curves', () => {
-    expect(crossfadeCurveFor('hard cut')).toBe('exp');
+    expect(crossfadeCurveFor('hard cut')).toBe('qsin');
     expect(crossfadeCurveFor('long dissolve')).toBe('hsin');
-    expect(crossfadeCurveFor('patient fade')).toBe('log');
+    expect(crossfadeCurveFor('patient fade')).toBe('hsin');
     expect(crossfadeCurveFor('phrase-locked blend')).toBe('qsin');
   });
 
   it('produces a valid curve name for every vibe', () => {
-    const valid = new Set(['exp', 'hsin', 'log', 'qsin', 'tri']);
+    const valid = new Set(['hsin', 'qsin']);
     for (const vibe of ALL_VIBES) {
       expect(valid.has(crossfadeCurveFor(vibeProfiles[vibe].transitionStyle))).toBe(true);
     }

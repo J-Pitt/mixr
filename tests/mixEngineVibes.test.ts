@@ -9,7 +9,7 @@ import {
   TARGET_LUFS,
   vibeProfiles,
 } from '../src/lib/mixEngine.js';
-import { ACROSSFADE_CURVES } from './helpers/filterGraph.js';
+import { ACROSSFADE_CURVES, CONSTANT_POWER_CURVES } from './helpers/filterGraph.js';
 
 describe('vibe data integrity', () => {
   it('exposes a non-trivial vibe list with no duplicates', () => {
@@ -98,16 +98,26 @@ describe('crossfadeCurveFor', () => {
   });
 
   it.each([
-    ['hard cut', 'exp'],
+    ['hard cut', 'qsin'],
     ['long dissolve', 'hsin'],
-    ['patient fade', 'log'],
+    ['patient fade', 'hsin'],
     ['phrase-locked blend', 'qsin'],
   ])('maps "%s" to %s', (style, expected) => {
     expect(crossfadeCurveFor(style)).toBe(expected);
   });
 
-  it('is case insensitive and still valid for unknown styles', () => {
-    expect(crossfadeCurveFor('HARD CUT')).toBe('exp');
+  // Two unrelated tracks sum incoherently, so an equal-gain pair like exp/log
+  // dips about 3 dB halfway through the blend. Every style has to stay on a
+  // constant-power curve or the handover audibly sags.
+  it.each([...allVibes.map((vibe) => vibeProfiles[vibe].transitionStyle), '', 'something nobody wrote'])(
+    'keeps "%s" on a constant-power curve',
+    (style) => {
+      expect(CONSTANT_POWER_CURVES).toContain(crossfadeCurveFor(style));
+    },
+  );
+
+  it('is case insensitive', () => {
+    expect(crossfadeCurveFor('HARD CUT')).toBe(crossfadeCurveFor('hard cut'));
     expect(ACROSSFADE_CURVES.has(crossfadeCurveFor(''))).toBe(true);
     expect(ACROSSFADE_CURVES.has(crossfadeCurveFor('something nobody wrote'))).toBe(true);
   });

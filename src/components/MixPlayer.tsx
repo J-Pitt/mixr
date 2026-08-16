@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, mixUrl } from '../lib/api';
 import { bridge, isDesktop } from '../lib/bridge';
-import { formatMegabytes, formatSeconds } from '../lib/mixEngine';
+import { formatBpm, formatMegabytes, formatSeconds } from '../lib/mixEngine';
 import { MixTimeline } from './MixTimeline';
 import type { MixRecord } from '../types';
 
@@ -163,9 +163,12 @@ export function MixPlayer({ mix, onDeleted }: MixPlayerProps) {
                   <span className="tracklist-title">{track.title}</span>
                   <span className="tracklist-meta">
                     {track.artist ? `${track.artist} · ` : ''}
-                    {track.bpm} BPM · {track.key} · plays {formatSeconds(track.startOffsetSeconds)}–
-                    {formatSeconds(track.endOffsetSeconds)}
-                    {track.transitionOut ? ` · ${track.transitionOut.lengthSeconds}s ${track.transitionOut.style}` : ''}
+                    {/* The tempo it plays at, which is the set tempo once it has been matched. */}
+                    {formatBpm(track.bpm * (track.tempoRatio ?? 1))} BPM · {track.key} · plays{' '}
+                    {formatSeconds(track.startOffsetSeconds)}–{formatSeconds(track.endOffsetSeconds)}
+                    {track.transitionOut
+                      ? ` · ${Math.round(track.transitionOut.lengthSeconds)}s ${track.transitionOut.style}`
+                      : ''}
                   </span>
                 </span>
                 <span className="tracklist-start">{formatSeconds(start)}</span>

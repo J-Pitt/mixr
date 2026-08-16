@@ -91,21 +91,31 @@ function fft(real: Float64Array, imag: Float64Array): void {
 const ONSET_HOP = 512;
 
 /**
+ * Hop used for beat tracking. Where the tempo only needs the average spacing,
+ * a beat's *position* is spliced against, and 512 samples of quantization is
+ * 23 ms — enough to hear two kicks flam. Overlapping windows buy resolution
+ * without making the envelope noisy.
+ */
+const BEAT_HOP = 128;
+const BEAT_WINDOW = 512;
+
+/**
  * Half-wave rectified difference of frame energy. Peaks line up with note and
  * drum onsets, which is what both tempo and beat phase are derived from.
  */
-function onsetEnvelope(samples: Float32Array): Float32Array {
-  const frames = Math.floor(samples.length / ONSET_HOP);
-  const rms = new Float64Array(frames);
+function onsetEnvelope(samples: Float32Array, hop = ONSET_HOP, window = hop): Float32Array {
+  const frames = Math.floor((samples.length - window) / hop) + 1;
+  if (frames < 2) return new Float32Array(0);
 
+  const rms = new Float64Array(frames);
   for (let frame = 0; frame < frames; frame += 1) {
-    const start = frame * ONSET_HOP;
+    const start = frame * hop;
     let sum = 0;
-    for (let i = start; i < start + ONSET_HOP; i += 1) sum += samples[i] * samples[i];
-    rms[frame] = Math.sqrt(sum / ONSET_HOP);
+    for (let i = start; i < start + window; i += 1) sum += samples[i] * samples[i];
+    rms[frame] = Math.sqrt(sum / window);
   }
 
-  const envelope = new Float32Array(Math.max(0, frames - 1));
+  const envelope = new Float32Array(frames - 1);
   for (let frame = 1; frame < frames; frame += 1) {
     envelope[frame - 1] = Math.max(0, rms[frame] - rms[frame - 1]);
   }
@@ -219,6 +229,118 @@ function estimateTempo(samples: Float32Array, sampleRate: number): TempoEstimate
     confidence,
     beatOffsetSeconds: bestPhase / frameRate,
   };
+}
+
+/**
+ * How strongly the tracker resists spacings that stray from the estimated
+ * tempo. Ellis's original value; low enough to follow a drifting drummer,
+ * high enough that a syncopated stab cannot pull the grid off the pulse.
+ */
+const BEAT_TIGHTNESS = 100;
+
+/**
+ * Every beat in the track, in seconds.
+ *
+ * A tempo and a starting phase are not enough to place a blend late in a song:
+ * the tempo estimate is only accurate to the resolution of the onset frames, so
+ * an extrapolated grid has drifted by whole beats long before the outro. This
+ * follows the pulse frame by frame (Ellis 2007, dynamic-programming beat
+ * tracking) so the grid is still true where transitions actually happen.
+ */
+function trackBeats(envelope: Float32Array, frameRate: number, bpm: number, windowFrames = 1): number[] {
+  const period = (60 / bpm) * frameRate;
+  if (!Number.isFinite(period) || period < 2 || envelope.length < period * 8) return [];
+
+  // Standardize the envelope so the onset reward and the spacing penalty stay
+  // on comparable scales whatever the track's level.
+  let mean = 0;
+  for (const value of envelope) mean += value;
+  mean /= envelope.length;
+  let variance = 0;
+  for (const value of envelope) variance += (value - mean) ** 2;
+  const deviation = Math.sqrt(variance / envelope.length);
+  if (deviation < 1e-9) return [];
+
+  const strength = new Float64Array(envelope.length);
+  for (let i = 0; i < envelope.length; i += 1) strength[i] = (envelope[i] - mean) / deviation;
+
+  const cumulative = new Float64Array(envelope.length);
+  const previous = new Int32Array(envelope.length).fill(-1);
+  const minGap = Math.max(1, Math.round(period * 0.5));
+  const maxGap = Math.max(minGap + 1, Math.round(period * 2));
+
+  for (let i = 0; i < envelope.length; i += 1) {
+    let bestScore = -Infinity;
+    let bestIndex = -1;
+    const from = Math.max(0, i - maxGap);
+    for (let j = from; j <= i - minGap; j += 1) {
+      // Squared log ratio, so half time and double time are penalized equally.
+      const stretch = Math.log((i - j) / period);
+      const score = cumulative[j] - BEAT_TIGHTNESS * stretch * stretch;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = j;
+      }
+    }
+
+    cumulative[i] = bestIndex === -1 ? strength[i] : strength[i] + bestScore;
+    previous[i] = bestIndex;
+  }
+
+  let last = 0;
+  for (let i = 1; i < cumulative.length; i += 1) {
+    if (cumulative[i] > cumulative[last]) last = i;
+  }
+
+  const frames: number[] = [];
+  for (let cursor = last; cursor !== -1; cursor = previous[cursor]) frames.push(cursor);
+  frames.reverse();
+  if (frames.length < 8) return [];
+
+  // Interpolating the peak either side of each beat recovers most of the
+  // remaining frame quantization.
+  return frames.map((frame) => {
+    let offset = 0;
+    if (frame > 0 && frame < envelope.length - 1) {
+      const before = envelope[frame - 1];
+      const at = envelope[frame];
+      const after = envelope[frame + 1];
+      const denominator = before - 2 * at + after;
+      if (Math.abs(denominator) > 1e-12) offset = clamp((0.5 * (before - after)) / denominator, -0.5, 0.5);
+    }
+    // Envelope index k is the rise into the window starting at frame k+1. With
+    // overlapping windows that rise appears as soon as the window reaches the
+    // transient, so the hit itself sits near the window's trailing edge.
+    const seconds = (frame + 1 + offset + (windowFrames - 1)) / frameRate;
+    return Math.round(Math.max(0, seconds) * 1000) / 1000;
+  });
+}
+
+/** Tempo implied by the tracked grid, which is finer than the frame-limited estimate. */
+function tempoFromBeats(beats: number[]): number | null {
+  if (beats.length < 9) return null;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < beats.length; i += 1) gaps.push(beats[i] - beats[i - 1]);
+  gaps.sort((left, right) => left - right);
+
+  const median = gaps[Math.floor(gaps.length / 2)];
+  if (!Number.isFinite(median) || median <= 0) return null;
+
+  // Average only the gaps that agree with the median, so a dropped or doubled
+  // beat cannot drag the tempo off.
+  let sum = 0;
+  let counted = 0;
+  for (const gap of gaps) {
+    if (Math.abs(gap - median) <= median * 0.12) {
+      sum += gap;
+      counted += 1;
+    }
+  }
+  if (counted < gaps.length * 0.5) return null;
+
+  const bpm = 60 / (sum / counted);
+  return bpm >= 50 && bpm <= 200 ? Math.round(bpm * 100) / 100 : null;
 }
 
 const CHROMA_FRAME = 4096;
@@ -358,6 +480,18 @@ function deriveTransitionMoments(slices: EnergySlice[]): number[] {
 }
 
 /**
+ * Bumped when the pipeline gains something the planner depends on, so cached
+ * analyses from an older build are recomputed instead of quietly disabling the
+ * features that need them.
+ */
+export const ANALYSIS_VERSION = 2;
+
+/** True when a stored analysis was produced by the current pipeline. */
+export function isAnalysisCurrent(analysis: TrackAnalysis | undefined): boolean {
+  return (analysis?.version ?? 1) >= ANALYSIS_VERSION;
+}
+
+/**
  * Full analysis of a real audio file. Every value here is measured, which is
  * what lets the planner and renderer agree on where blends should land.
  */
@@ -391,12 +525,24 @@ export async function analyzeAudioFile(filePath: string): Promise<TrackAnalysis>
   const key = estimateKey(samples, sampleRate);
   const { introSecond, outroSecond } = pickIntroOutro(slices);
 
+  const beatTimes = trackBeats(
+    onsetEnvelope(samples, BEAT_HOP, BEAT_WINDOW),
+    sampleRate / BEAT_HOP,
+    tempo.bpm,
+    BEAT_WINDOW / BEAT_HOP,
+  );
+  const trackedBpm = tempoFromBeats(beatTimes);
+
   return {
+    version: ANALYSIS_VERSION,
     durationSeconds: Math.round(durationSeconds * 100) / 100,
     usableDurationSeconds: Math.max(1, outroSecond - introSecond),
-    bpm: tempo.bpm,
+    // The tracked grid measures the tempo over the whole track rather than to
+    // the nearest onset frame, so it wins when it is trustworthy.
+    bpm: trackedBpm ?? tempo.bpm,
     bpmConfidence: Math.round(tempo.confidence * 100) / 100,
     beatOffsetSeconds: Math.round(tempo.beatOffsetSeconds * 1000) / 1000,
+    beatTimes,
     key: key.key,
     keyConfidence: Math.round(key.confidence * 100) / 100,
     averageEnergy,
@@ -408,4 +554,14 @@ export async function analyzeAudioFile(filePath: string): Promise<TrackAnalysis>
   };
 }
 
-export const internals = { estimateTempo, estimateKey, pickIntroOutro, deriveTransitionMoments, normalizeSeries, fft };
+export const internals = {
+  estimateTempo,
+  estimateKey,
+  pickIntroOutro,
+  deriveTransitionMoments,
+  normalizeSeries,
+  fft,
+  onsetEnvelope,
+  trackBeats,
+  tempoFromBeats,
+};

@@ -8,10 +8,23 @@ import { paths } from './paths.js';
 export interface RenderSegment {
   mediaPath: string;
   startOffsetSeconds: number;
+  /** Length on the mix timeline, after any tempo change. */
   playDurationSeconds: number;
   gainDb: number;
+  /** Crossfade out of the *previous* segment, in seconds. */
+  transitionInSeconds?: number;
   /** Crossfade into the *next* segment, in seconds. */
   transitionOutSeconds: number;
+  /** Playback rate that puts this track on the set tempo. Defaults to 1. */
+  tempoRatio?: number;
+}
+
+/** A rate this far from 1 is not worth a resampling pass. */
+const TEMPO_EPSILON = 1e-4;
+
+function rateOf(segment: RenderSegment): number {
+  const ratio = segment.tempoRatio;
+  return typeof ratio === 'number' && Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
 }
 
 export interface MixFilterGraph {
@@ -40,11 +53,14 @@ export function buildMixFilterGraph(
   const curve = crossfadeCurveFor(vibeProfiles[vibe].transitionStyle);
 
   segments.forEach((segment, index) => {
+    const rate = rateOf(segment);
+
     // Seeking before -i is the fast path, and it is sample accurate for the
-    // FLAC intermediates we always render from.
+    // FLAC intermediates we always render from. A stretched track has to read
+    // proportionally more source to fill the same slot on the timeline.
     inputArgs.push(
       '-ss', segment.startOffsetSeconds.toFixed(3),
-      '-t', segment.playDurationSeconds.toFixed(3),
+      '-t', (segment.playDurationSeconds * rate).toFixed(3),
       '-i', segment.mediaPath,
     );
 
@@ -52,12 +68,25 @@ export function buildMixFilterGraph(
       'aresample=44100:resampler=soxr',
       'aformat=sample_fmts=fltp:channel_layouts=stereo',
     ];
+    // atempo stretches time without moving pitch, which is what a DJ deck's
+    // master tempo does. Everything downstream is measured after this point.
+    if (Math.abs(rate - 1) > TEMPO_EPSILON) stages.push(`atempo=${rate.toFixed(4)}`);
     if (segment.gainDb !== 0) stages.push(`volume=${segment.gainDb.toFixed(2)}dB`);
     stages.push(...eq);
     // A short fade at the very edges prevents clicks where a cut lands mid-waveform.
     stages.push('afade=t=in:st=0:d=0.02');
 
-    chains.push(`[${index}:a]${stages.join(',')}[a${index}]`);
+    const fadeIn = Math.max(0, segment.transitionInSeconds ?? 0);
+    const fadeOut = Math.max(0, segment.transitionOutSeconds);
+    if (fadeIn > 0.05 || fadeOut > 0.05) {
+      // Split the kick/bass off the rest of the track and hand it over later
+      // than the mids and highs. Two full-range kicks stacked through a
+      // crossfade is what makes a mathematically aligned blend still sound dirty.
+      chains.push(`[${index}:a]${stages.join(',')}[p${index}]`);
+      appendBassHandoff(chains, index, segment.playDurationSeconds, fadeIn, fadeOut);
+    } else {
+      chains.push(`[${index}:a]${stages.join(',')}[a${index}]`);
+    }
   });
 
   let current = '[a0]';
@@ -83,6 +112,37 @@ export function buildMixFilterGraph(
   }
 
   return { inputArgs, filterComplex: chains.join(';'), outputLabel: current };
+}
+
+/**
+ * DJ-style bass swap: incoming bass stays out until the blend is underway,
+ * outgoing bass leaves before the incoming kick takes the floor.
+ */
+function appendBassHandoff(
+  chains: string[],
+  index: number,
+  playDurationSeconds: number,
+  fadeIn: number,
+  fadeOut: number,
+): void {
+  chains.push(`[p${index}]asplit=2[p${index}h][p${index}l]`);
+  chains.push(`[p${index}h]highpass=f=180:poles=2[p${index}air]`);
+  chains.push(`[p${index}l]lowpass=f=180:poles=2[p${index}bass]`);
+
+  const bassFilters: string[] = [];
+  if (fadeIn > 0.05) bassFilters.push(`afade=t=in:st=0:d=${fadeIn.toFixed(3)}`);
+  if (fadeOut > 0.05) {
+    const start = Math.max(0, playDurationSeconds - fadeOut);
+    bassFilters.push(`afade=t=out:st=${start.toFixed(3)}:d=${fadeOut.toFixed(3)}`);
+  }
+
+  const bassLabel = bassFilters.length > 0 ? `p${index}bf` : `p${index}bass`;
+  if (bassFilters.length > 0) {
+    chains.push(`[p${index}bass]${bassFilters.join(',')}[${bassLabel}]`);
+  }
+  chains.push(
+    `[p${index}air][${bassLabel}]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a${index}]`,
+  );
 }
 
 /** ffmpeg metadata file describing one chapter per track, for players that show them. */
@@ -148,7 +208,9 @@ export async function renderMix(options: RenderOptions): Promise<RenderResult> {
       startOffsetSeconds: track.startOffsetSeconds,
       playDurationSeconds: track.playDurationSeconds,
       gainDb: track.gainDb ?? 0,
+      transitionInSeconds: track.transitionIn?.lengthSeconds ?? 0,
       transitionOutSeconds: track.transitionOut?.lengthSeconds ?? 0,
+      tempoRatio: track.tempoRatio ?? 1,
     };
   });
 

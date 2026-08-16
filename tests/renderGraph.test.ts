@@ -120,14 +120,25 @@ describe('buildMixFilterGraph — graph structure', () => {
 
   it('per-segment chains resample, reformat, and de-click every input', () => {
     const graph = buildMixFilterGraph(makeSegments(3), 'Ambient');
-    const chains = parseFilterComplex(graph.filterComplex).slice(0, 3);
-    chains.forEach((chain, index) => {
+    const sourceChains = parseFilterComplex(graph.filterComplex).filter((chain) =>
+      chain.inputs.length === 1 && /^\d+:a$/.test(chain.inputs[0]),
+    );
+    expect(sourceChains).toHaveLength(3);
+    sourceChains.forEach((chain, index) => {
       expect(chain.inputs).toEqual([`${index}:a`]);
-      expect(chain.outputs).toEqual([`a${index}`]);
       expect(chain.filters[0]).toContain('aresample=44100');
       expect(chain.filters.some((filter) => filter.startsWith('aformat='))).toBe(true);
       expect(chain.filters[chain.filters.length - 1]).toMatch(/^afade=t=in:st=0:d=/);
     });
+  });
+
+  it('hands the bass over during each blend instead of stacking two kicks', () => {
+    const graph = buildMixFilterGraph(makeSegments(2), 'House');
+    expect(graph.filterComplex).toContain('lowpass=f=180:poles=2');
+    expect(graph.filterComplex).toContain('highpass=f=180:poles=2');
+    expect(graph.filterComplex).toMatch(/afade=t=out:st=/);
+    expect(graph.filterComplex).toMatch(/afade=t=in:st=0:d=8\.000/);
+    expect(graph.filterComplex).toContain('amix=inputs=2:duration=first:dropout_transition=0:normalize=0');
   });
 
   it('applies a volume filter only when a gain is requested', () => {
@@ -141,10 +152,13 @@ describe('buildMixFilterGraph — graph structure', () => {
   it.each(allVibes)('inlines the %s eq chain into every segment', (vibe) => {
     const filters = eqFiltersFor(vibe);
     const graph = buildMixFilterGraph(makeSegments(2), vibe);
-    const chains = parseFilterComplex(graph.filterComplex);
+    const sourceChains = parseFilterComplex(graph.filterComplex).filter((chain) =>
+      chain.inputs.length === 1 && /^\d+:a$/.test(chain.inputs[0]),
+    );
+    expect(sourceChains).toHaveLength(2);
     for (let index = 0; index < 2; index += 1) {
       for (const filter of filters) {
-        expect(chains[index].filters, `${vibe} segment ${index}`).toContain(filter);
+        expect(sourceChains[index].filters, `${vibe} segment ${index}`).toContain(filter);
       }
     }
   });
@@ -185,8 +199,8 @@ describe('buildMixFilterGraph — crossfades', () => {
     const graph = buildMixFilterGraph(segments, 'Festival');
 
     expect(graph.filterComplex).not.toContain('d=0.000');
-    const joins = parseFilterComplex(graph.filterComplex).filter(
-      (chain) => chain.inputs.length === 2,
+    const joins = parseFilterComplex(graph.filterComplex).filter((chain) =>
+      chain.filters.some((filter) => filter.startsWith('acrossfade') || filter.startsWith('concat')),
     );
     expect(joins[0].filters[0]).toMatch(/^concat=n=2:v=0:a=1$/);
     expect(joins[1].filters[0]).toMatch(/^acrossfade=d=8\.000/);
@@ -205,7 +219,9 @@ describe('buildMixFilterGraph — crossfades', () => {
 
   it('chains blends left to right so each one consumes the previous result', () => {
     const graph = buildMixFilterGraph(makeSegments(4), 'House');
-    const joins = parseFilterComplex(graph.filterComplex).filter((chain) => chain.inputs.length === 2);
+    const joins = parseFilterComplex(graph.filterComplex).filter((chain) =>
+      chain.filters.some((filter) => filter.startsWith('acrossfade') || filter.startsWith('concat')),
+    );
     expect(joins.map((join) => join.inputs)).toEqual([
       ['a0', 'a1'],
       ['x1', 'a2'],
