@@ -93,7 +93,7 @@ function PlaylistLoader({
     if (!trimmed || busy || disabled) return;
 
     if (!isProbablyUrl(trimmed)) {
-      setError('Paste a YouTube or SoundCloud playlist link.');
+      setError('Paste a YouTube, SoundCloud, or Spotify playlist link.');
       return;
     }
 
@@ -126,7 +126,7 @@ function PlaylistLoader({
                 load();
               }
             }}
-            placeholder="Paste a YouTube playlist or SoundCloud set link"
+            placeholder="Paste a YouTube, SoundCloud, or Spotify playlist"
             aria-label="Playlist link"
           />
           <button type="button" className="ghost-button" onClick={load} disabled={disabled || busy || !url.trim()}>

@@ -7,7 +7,15 @@ import { MixPlayer } from './components/MixPlayer';
 import { SetupBanner } from './components/SetupBanner';
 import { emptyRow, SongRows, type SongRow } from './components/SongRows';
 import { TitleBar } from './components/TitleBar';
+import { GenrePicker } from './components/GenrePicker';
 import { VibePicker } from './components/VibePicker';
+import { vibeForGenre, type Genre } from './lib/genres';
+import {
+  looksLikeFullMix,
+  parseTargetBpm,
+  suggestedTrackCount,
+  suggestSearchQueries,
+} from './lib/suggestTracks';
 import type { LibrarySnapshot, RenderProgress, SearchResult, ToolStatus, TrackRequest, Vibe } from './types';
 
 const EMPTY_LIBRARY: LibrarySnapshot = { mixes: [], tracks: [] };
@@ -34,12 +42,15 @@ export default function App() {
 
   const [title, setTitle] = useState('');
   const [targetMinutes, setTargetMinutes] = useState('');
+  const [targetBpm, setTargetBpm] = useState('');
   const [provider, setProvider] = useState<'youtube' | 'soundcloud'>('youtube');
+  const [genre, setGenre] = useState<Genre | null>(null);
   const [vibes, setVibes] = useState<Vibe[]>(['Peak Time']);
   const [rows, setRows] = useState<SongRow[]>([emptyRow(), emptyRow()]);
 
   const [job, setJob] = useState<RenderProgress | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
   const [dragging, setDragging] = useState(false);
   const unwatchRef = useRef<(() => void) | null>(null);
 
@@ -99,10 +110,11 @@ export default function App() {
   );
 
   const busy = job !== null && job.stage !== 'done' && job.stage !== 'error';
+  const formLocked = busy || finding;
   // A null `tools` means the probe is still running, not that yt-dlp is missing,
   // so it must not block the button on a cold start.
   const downloadsUsable = tools === null || tools.ytdlp.ready || allLocal(requests);
-  const canBuild = requests.length >= 1 && vibes.length > 0 && !busy && downloadsUsable;
+  const canBuild = requests.length >= 1 && vibes.length > 0 && !formLocked && downloadsUsable;
 
   const pickFiles = async () => {
     const desktop = bridge();
@@ -191,6 +203,7 @@ export default function App() {
       title: title.trim() || 'Untitled mix',
       vibes,
       targetMinutes: Number.isFinite(minutes) && minutes > 0 ? minutes : undefined,
+      targetBpm: parseTargetBpm(targetBpm),
       tracks: requests,
     };
 
@@ -222,6 +235,81 @@ export default function App() {
         );
       })
       .catch((error: unknown) => setFormError(error instanceof Error ? error.message : String(error)));
+  };
+
+  const findSongs = async () => {
+    if (!genre && vibes.length === 0) {
+      setFormError('Choose a genre first.');
+      return;
+    }
+    if (tools && !tools.ytdlp.ready) {
+      setFormError('Finish the one-time setup above to search for songs.');
+      return;
+    }
+
+    const minutes = Number(targetMinutes);
+    const bpm = parseTargetBpm(targetBpm);
+    const filled = rows.filter((row) => row.text.trim() || row.localPath || row.picked);
+    const want = suggestedTrackCount(Number.isFinite(minutes) && minutes > 0 ? minutes : undefined);
+    const stillNeed = Math.max(0, want - filled.length);
+    if (stillNeed === 0) {
+      setFormError(`You already have ${filled.length} songs. Remove some if you want mixR to find replacements.`);
+      return;
+    }
+
+    setFormError(null);
+    setFinding(true);
+
+    const seen = new Set<string>();
+    for (const row of filled) {
+      if (row.picked?.webpageUrl) seen.add(row.picked.webpageUrl);
+      const label = (row.picked?.title ?? row.localName ?? row.text).trim().toLowerCase();
+      if (label) seen.add(label);
+    }
+
+    const queries = suggestSearchQueries({
+      genre: genre ?? undefined,
+      vibes,
+      title,
+      existingTitles: filled.map((row) => row.picked?.title ?? row.localName ?? row.text.trim()).filter(Boolean),
+      targetBpm: bpm,
+    });
+
+    try {
+      const found: SearchResult[] = [];
+      for (const query of queries) {
+        if (found.length >= stillNeed) break;
+        const results = await api.search(query, provider);
+        for (const result of results) {
+          if (found.length >= stillNeed) break;
+          if (looksLikeFullMix(result.title, result.durationSeconds)) continue;
+          const titleKey = result.title.trim().toLowerCase();
+          if (seen.has(result.webpageUrl) || seen.has(titleKey)) continue;
+          seen.add(result.webpageUrl);
+          seen.add(titleKey);
+          found.push(result);
+        }
+      }
+
+      if (found.length === 0) {
+        setFormError('Could not find songs for that genre. Try another one, or add a mix name or BPM.');
+        return;
+      }
+
+      setRows((current) => {
+        const kept = current.filter((row) => row.text.trim() || row.localPath || row.picked);
+        const additions: SongRow[] = found.map((result) => ({
+          id: crypto.randomUUID(),
+          text: result.title,
+          picked: result,
+        }));
+        return kept.length > 0 ? [...kept, ...additions] : additions;
+      });
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFinding(false);
+    }
   };
 
   const cancel = () => {
@@ -336,6 +424,16 @@ export default function App() {
                     />
                   </label>
 
+                  <label className="field">
+                    <span>Target BPM (optional)</span>
+                    <input
+                      value={targetBpm}
+                      onChange={(event) => setTargetBpm(event.target.value.replace(/[^\d.]/g, ''))}
+                      inputMode="decimal"
+                      placeholder="e.g. 128"
+                    />
+                  </label>
+
                   <div className="field">
                     <span>Search source</span>
                     <div className="segmented">
@@ -353,16 +451,33 @@ export default function App() {
                   </div>
                 </div>
 
+                <GenrePicker
+                  selected={genre}
+                  onChange={(next) => {
+                    const previous = genre ? vibeForGenre(genre) : undefined;
+                    const mapped = next ? vibeForGenre(next) : undefined;
+                    setGenre(next);
+                    setVibes((current) => {
+                      let nextVibes = previous && previous !== mapped ? current.filter((vibe) => vibe !== previous) : current;
+                      if (mapped && !nextVibes.includes(mapped)) nextVibes = [...nextVibes, mapped];
+                      return nextVibes.length > 0 ? nextVibes : ['Peak Time'];
+                    });
+                  }}
+                  onFindSongs={() => void findSongs()}
+                  finding={finding}
+                  disabled={formLocked}
+                />
+
                 <SongRows
                   rows={rows}
                   provider={provider}
                   onChange={setRows}
                   onPickFiles={pickFiles}
                   onPlaylistLoaded={applyPlaylist}
-                  disabled={busy}
+                  disabled={formLocked}
                 />
 
-                <VibePicker selected={vibes} onChange={setVibes} disabled={busy} />
+                <VibePicker selected={vibes} onChange={setVibes} disabled={formLocked} />
 
                 {formError ? <p className="error-banner">{formError}</p> : null}
 

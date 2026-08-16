@@ -223,12 +223,15 @@ export function createApp() {
 
     const targetRaw = Number(body.targetMinutes);
     const targetMinutes = Number.isFinite(targetRaw) && targetRaw > 0 ? targetRaw : undefined;
+    const bpmRaw = Number(body.targetBpm);
+    const targetBpm = Number.isFinite(bpmRaw) && bpmRaw >= 50 && bpmRaw <= 220 ? bpmRaw : undefined;
 
     try {
       const jobId = startMixJob({
         title: typeof body.title === 'string' ? body.title : 'Untitled mix',
         vibes,
         targetMinutes,
+        targetBpm,
         tracks: requests,
       });
       response.status(202).json({ jobId });

@@ -13,6 +13,7 @@ import {
   listPlaylist,
   MAX_PLAYLIST_TRACKS,
   search,
+  type PlaylistListing,
   type ResolvedTrackInfo,
 } from './ytdlp.js';
 
@@ -56,11 +57,7 @@ function hash(value: string): string {
  */
 async function resolveSpotifyMetadata(url: string): Promise<{ title: string; artist?: string }> {
   try {
-    const module = await import('spotify-url-info');
-    const factory = (module.default ?? module) as (fetcher: typeof fetch) => {
-      getPreview: (url: string) => Promise<{ title?: string; artist?: string }>;
-    };
-    const preview = await factory(fetch).getPreview(url);
+    const preview = await (await spotifyClient()).getPreview(url);
     if (preview?.title) return { title: preview.title, artist: preview.artist };
   } catch {
     // Fall through to the oEmbed endpoint, which needs no library.
@@ -73,6 +70,58 @@ async function resolveSpotifyMetadata(url: string): Promise<{ title: string; art
   }
 
   throw new Error('Could not read that Spotify link. Try pasting a YouTube or SoundCloud link instead.');
+}
+
+function spotifyClient() {
+  return import('spotify-url-info').then((module) => {
+    const factory = (module.default ?? module) as (fetcher: typeof fetch) => {
+      getPreview: (url: string) => Promise<{ title?: string; artist?: string }>;
+      getDetails: (url: string) => Promise<{
+        preview?: { title?: string; image?: string };
+        tracks?: Array<{ name?: string; artist?: string; duration?: number; uri?: string }>;
+      }>;
+    };
+    return factory(fetch);
+  });
+}
+
+function spotifyTrackUrl(uri: string | undefined): string | undefined {
+  const id = uri?.split(':').pop();
+  return id ? `https://open.spotify.com/track/${id}` : undefined;
+}
+
+/** Reads a Spotify playlist or album. Audio still comes from YouTube later. */
+export async function listSpotifyPlaylist(url: string): Promise<PlaylistListing> {
+  const client = await spotifyClient();
+  const details = await client.getDetails(url);
+  const raw = details.tracks ?? [];
+  const tracks: ResolvedTrackInfo[] = [];
+
+  for (const entry of raw.slice(0, MAX_PLAYLIST_TRACKS)) {
+    const title = entry.name?.trim();
+    const webpageUrl = spotifyTrackUrl(entry.uri);
+    if (!title || !webpageUrl) continue;
+    tracks.push({
+      sourceId: entry.uri ?? webpageUrl,
+      title,
+      artist: entry.artist,
+      durationSeconds: typeof entry.duration === 'number' && entry.duration > 0 ? entry.duration / 1000 : undefined,
+      thumbnail: details.preview?.image,
+      webpageUrl,
+      provider: 'spotify',
+    });
+  }
+
+  if (tracks.length === 0) {
+    throw new Error('That Spotify playlist did not contain any playable tracks.');
+  }
+
+  return {
+    title: details.preview?.title?.trim() || 'Playlist',
+    url,
+    truncated: raw.length > tracks.length,
+    tracks,
+  };
 }
 
 export interface ResolvedSource {
@@ -167,14 +216,14 @@ export async function loadPlaylist(
   if (!isHttpUrl(url)) throw new Error('That does not look like a link.');
 
   const provider = detectProvider(url);
-  if (provider !== 'youtube' && provider !== 'soundcloud') {
-    throw new Error('Paste a YouTube or SoundCloud playlist link.');
+  if (provider !== 'youtube' && provider !== 'soundcloud' && provider !== 'spotify') {
+    throw new Error('Paste a YouTube, SoundCloud, or Spotify playlist link.');
   }
   if (!isPlaylistUrl(url)) {
     throw new Error('That looks like a single track. Paste a playlist or set link instead.');
   }
 
-  const listing = await listPlaylist(url, { signal });
+  const listing = provider === 'spotify' ? await listSpotifyPlaylist(url) : await listPlaylist(url, { signal });
   const seen = new Set<string>();
   const results: SearchResult[] = [];
   for (const track of listing.tracks) {
@@ -216,7 +265,10 @@ export async function expandTrackRequests(
 
   for (const request of requests) {
     if (request.kind === 'link' && isPlaylistUrl(request.url)) {
-      const listing = await listPlaylist(request.url, { signal });
+      const listing =
+        detectProvider(request.url) === 'spotify'
+          ? await listSpotifyPlaylist(request.url)
+          : await listPlaylist(request.url, { signal });
       for (const track of listing.tracks) push({ kind: 'link', url: track.webpageUrl });
       continue;
     }

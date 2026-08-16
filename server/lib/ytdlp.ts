@@ -34,7 +34,7 @@ export interface ResolvedTrackInfo {
   durationSeconds?: number;
   thumbnail?: string;
   webpageUrl: string;
-  provider: 'youtube' | 'soundcloud' | 'unknown';
+  provider: 'youtube' | 'soundcloud' | 'spotify' | 'unknown';
 }
 
 const zipappPath = () => path.join(paths.bin, 'yt-dlp.pyz');

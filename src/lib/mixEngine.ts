@@ -435,7 +435,11 @@ function beatIndexAtOrAfter(beats: number[], second: number): number {
  * blend that starts locked stays locked. Tracks that cannot be stretched to it
  * keep their own tempo and simply do not get beat-matched.
  */
-export function chooseSetTempo(tracks: TrackInput[]): number | null {
+export function chooseSetTempo(tracks: TrackInput[], targetBpm?: number): number | null {
+  if (typeof targetBpm === 'number' && Number.isFinite(targetBpm) && targetBpm >= 50 && targetBpm <= 220) {
+    return Math.round(targetBpm * 10) / 10;
+  }
+
   const candidates = tracks
     .filter((track) => beatGrid(track.analysis) && track.analysis.bpmConfidence >= MIN_TEMPO_CONFIDENCE)
     .map((track) => foldTempo(track.analysis.bpm))
@@ -767,11 +771,13 @@ export function generateMixPlan({
   tracks,
   vibe,
   targetMinutes,
+  targetBpm,
 }: {
   title: string;
   tracks: TrackInput[];
   vibe: Vibe;
   targetMinutes?: number;
+  targetBpm?: number;
 }): MixPlan {
   const warnings: string[] = [];
   if (tracks.length === 0) {
@@ -779,6 +785,7 @@ export function generateMixPlan({
       title: title.trim() || 'Untitled mix',
       vibe,
       targetMinutes,
+      targetBpm,
       totalDurationSeconds: 0,
       tracks: [],
       summary: 'No tracks to sequence.',
@@ -791,7 +798,7 @@ export function generateMixPlan({
   // One tempo for the set, and the rate each track needs to sit on it. Beats
   // only stay aligned for the length of a blend if both sides run at the same
   // tempo, so this has to be settled before anything is measured in bars.
-  const setTempo = chooseSetTempo(ordered);
+  const setTempo = chooseSetTempo(ordered, targetBpm);
   const matched = ordered.map((track) => tempoRatioFor(track.analysis, setTempo));
   const tempoRatios = matched.map((ratio) => ratio ?? 1);
   const barSeconds = setTempo ? (60 / setTempo) * BEATS_PER_BAR : 0;
@@ -1002,6 +1009,7 @@ export function generateMixPlan({
     title: title.trim() || 'Untitled mix',
     vibe,
     targetMinutes,
+    targetBpm,
     totalDurationSeconds: Math.max(0, Math.round(totalDurationSeconds)),
     tracks: planTracks,
     summary: `${planTracks.length} tracks sequenced for a ${vibe.toLowerCase()} set with ${Math.max(0, planTracks.length - 1)} transitions.`,

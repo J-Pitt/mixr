@@ -73,7 +73,13 @@ export const api = {
       body: JSON.stringify(track),
     }),
 
-  createMix: (payload: { title: string; vibes: Vibe[]; targetMinutes?: number; tracks: TrackRequest[] }) =>
+  createMix: (payload: {
+    title: string;
+    vibes: Vibe[];
+    targetMinutes?: number;
+    targetBpm?: number;
+    tracks: TrackRequest[];
+  }) =>
     request<{ jobId: string }>('/api/mixes', { method: 'POST', body: JSON.stringify(payload) }),
 
   job: (jobId: string) => request<RenderProgress>(`/api/mixes/${jobId}`),

@@ -12,6 +12,7 @@ export interface MixJobRequest {
   title: string;
   vibes: Vibe[];
   targetMinutes?: number;
+  targetBpm?: number;
   tracks: TrackRequest[];
 }
 
@@ -180,6 +181,7 @@ async function execute(job: Job, request: MixJobRequest): Promise<void> {
       title: request.title,
       vibe,
       targetMinutes: request.targetMinutes,
+      targetBpm: request.targetBpm,
       tracks: ingested,
     });
     plan.warnings.push(...failures);

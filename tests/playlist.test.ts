@@ -12,6 +12,9 @@ describe('isPlaylistUrl', () => {
     'https://soundcloud.com/artist/sets/late-night-drive',
     'https://m.soundcloud.com/artist/sets/late-night-drive/',
     'https://www.soundcloud.com/dj/sets/festival-warmup',
+    'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+    'https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M',
+    'https://open.spotify.com/album/4m2880jivSbbyEGAKfITCa',
   ])('recognizes %s', (url) => {
     expect(isPlaylistUrl(url)).toBe(true);
   });
@@ -21,7 +24,7 @@ describe('isPlaylistUrl', () => {
     'https://youtu.be/dQw4w9WgXcQ',
     'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDxxxxxxxx',
     'https://soundcloud.com/artist/a-single-track',
-    'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+    'https://open.spotify.com/track/5nTtCOCds6I0PHMNtqelas',
     'https://example.com/sets/not-soundcloud',
     'not a url',
     '',

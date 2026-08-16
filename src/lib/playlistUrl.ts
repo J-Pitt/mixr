@@ -1,4 +1,4 @@
-/** True for YouTube playlist pages / list=PL… links and SoundCloud sets. */
+/** True for YouTube playlists, SoundCloud sets, and Spotify playlists or albums. */
 export function isPlaylistUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
@@ -9,6 +9,10 @@ export function isPlaylistUrl(value: string): boolean {
 
     if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) {
       return /\/sets\/[^/]+/.test(pathname);
+    }
+
+    if (host === 'open.spotify.com' || host === 'play.spotify.com' || host.endsWith('.spotify.com')) {
+      return /\/(playlist|album)\//.test(pathname);
     }
 
     const youtube =

@@ -109,6 +109,14 @@ describe('tempo folding and matching', () => {
     expect(chooseSetTempo([makeTrack({ id: 'a' }), makeTrack({ id: 'b' })])).toBeNull();
   });
 
+  it('uses an explicit target BPM instead of the track median', () => {
+    expect(chooseSetTempo([beatTrack('a', 122), beatTrack('b', 124), beatTrack('c', 127)], 128)).toBe(128);
+  });
+
+  it('does not octave-fold an explicit target BPM', () => {
+    expect(chooseSetTempo([beatTrack('a', 128)], 64)).toBe(64);
+  });
+
   it('ignores tracks whose tempo estimate was a guess', () => {
     const tempo = chooseSetTempo([
       beatTrack('sure-1', 128),

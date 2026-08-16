@@ -185,6 +185,8 @@ export interface MixPlan {
   title: string;
   vibe: Vibe;
   targetMinutes?: number;
+  /** When set, every beat-matched track is stretched toward this tempo. */
+  targetBpm?: number;
   totalDurationSeconds: number;
   tracks: MixPlanTrack[];
   summary: string;
