@@ -204,7 +204,10 @@ function registerIpc(): void {
 }
 
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  console.error(
+    '[mixr] another mixR window is already running (often /Applications/mixR.app). Quit that copy, then run `npm run dev` again.',
+  );
+  app.exit(1);
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {
