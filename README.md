@@ -1,6 +1,6 @@
 # mixR
 
-A macOS desktop app that turns a list of songs into one continuous, beat-aware, crossfaded DJ mix — and renders it to a real MP3 you can play, save, and share.
+A macOS desktop app — and a local website — that turns a list of songs into one continuous, beat-aware, crossfaded DJ mix and renders it to a real MP3 you can play, save, and share.
 
 Name the songs, paste links, or drop files. mixR finds the audio, measures each track's tempo, key, and loudness, sequences them into a set that suits the vibe you picked, and renders a single 320 kbps MP3 with proper crossfades, level matching, and chapter markers.
 
@@ -16,6 +16,25 @@ npm run dev
 ```
 
 That launches the Vite dev server and the Electron app together. On first run the app asks to download **yt-dlp** (a free 3 MB tool it uses to find and fetch audio); click the button and wait a few seconds.
+
+To use it in a browser instead (same machine, same library):
+
+```bash
+npm run web          # production UI + API at http://127.0.0.1:8787
+npm run dev:web      # Vite hot reload + API, open http://localhost:5173
+```
+
+**Email link** in the top bar opens your mail app with a Wi-Fi address so someone on the same network can open mixR. Leave `npm run web` running while they use it. The desktop app stays on localhost and is not shared that way.
+
+In the browser, **Install app** adds mixR to the Home Screen or the app drawer (Chrome/Edge on localhost, or Share → Add to Home Screen on iPhone). The Mac still has to be running `npm run web` — the phone is only the UI.
+
+To run the website in Docker on a machine that already has Docker (not an old Mac):
+
+```bash
+docker compose up --build
+```
+
+Then open http://127.0.0.1:8787. Mixes persist in a Docker volume. This does not replace the `.pkg` for someone on Catalina — current Docker Desktop will not install there.
 
 To build a standalone app:
 
@@ -79,7 +98,8 @@ Rendering is a deliberate two-pass process: the crossfaded mix is built lossless
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Vite + Electron, with hot reload |
-| `npm run dev:web` | Vite + the API only, for working in a browser |
+| `npm run web` | Production website + API at http://127.0.0.1:8787 |
+| `npm run dev:web` | Vite + the API, for working in a browser |
 | `npm test` | The full test suite (637 tests) |
 | `npm run typecheck` | Typechecks the client and the server/Electron code |
 | `npm run build` | Typecheck, build the UI, bundle the Electron entry points |
@@ -107,7 +127,7 @@ Songs are cached so reusing one is instant. The Library screen shows what is on 
 
 ## Requirements
 
-- macOS
+- macOS 10.15 Catalina or later (Intel x64 or Apple Silicon)
 - Node.js 20 or newer (to build from source)
 - Python 3.10+ *(optional)* — if present, yt-dlp runs as a fast Python zipapp; otherwise a slower self-contained binary is used
 

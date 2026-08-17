@@ -3,6 +3,7 @@ import { api, mixUrl } from '../lib/api';
 import { bridge, isDesktop } from '../lib/bridge';
 import { formatBpm, formatMegabytes, formatSeconds } from '../lib/mixEngine';
 import { MixTimeline } from './MixTimeline';
+import { ShareEmailButton } from './ShareEmailButton';
 import type { MixRecord } from '../types';
 
 interface MixPlayerProps {
@@ -128,6 +129,7 @@ export function MixPlayer({ mix, onDeleted }: MixPlayerProps) {
               Download
             </a>
           )}
+          <ShareEmailButton title={mix.title} path={`/renders/${encodeURIComponent(mix.file)}`} className="ghost-button" />
           {onDeleted ? (
             <button type="button" className="ghost-button danger" onClick={remove}>
               Delete

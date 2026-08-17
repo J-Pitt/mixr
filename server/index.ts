@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express, { type Response } from 'express';
 import type { ToolStatus, TrackRequest, Vibe } from '../src/types.js';
@@ -10,9 +12,33 @@ import { ingestTrack, isHttpUrl, loadPlaylist, searchTracks } from './lib/ingest
 import { cancelJob, getJob, startMixJob, subscribe } from './lib/jobs.js';
 import { cleanTmp, ensureDirs, paths } from './lib/paths.js';
 import * as store from './lib/store.js';
+import { shareUrls } from './lib/share.js';
+import { saveUpload } from './lib/uploads.js';
 import { ensureYtDlp, findPython, findYtDlp, ytDlpVersion } from './lib/ytdlp.js';
 
 const DEFAULT_PORT = 8787;
+const DEFAULT_HOST = '127.0.0.1';
+
+function canBind(port: number, bindHost: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', () => resolve(false));
+    tester.once('listening', () => {
+      tester.close(() => resolve(true));
+    });
+    tester.listen(port, bindHost);
+  });
+}
+
+/** Built Vite output, when this process is also the website. */
+function resolveClientDir(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [path.join(process.cwd(), 'dist'), path.join(here, '..', '..', 'dist'), path.join(here, '..', 'dist')];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'index.html'))) return dir;
+  }
+  return null;
+}
 
 function fail(response: Response, status: number, message: string): void {
   response.status(status).json({ error: message });
@@ -74,6 +100,12 @@ export function createApp() {
 
   app.get('/api/health', (_request, response) => {
     response.json({ ok: true, dataDir: paths.data });
+  });
+
+  app.get('/api/share', (request, response) => {
+    const port = request.socket.localPort || Number(process.env.MIXR_PORT ?? DEFAULT_PORT);
+    const host = process.env.MIXR_HOST?.trim() || DEFAULT_HOST;
+    response.json(shareUrls(port, host !== '127.0.0.1' && host !== 'localhost'));
   });
 
   app.get('/api/tools', async (_request, response) => {
@@ -165,6 +197,21 @@ export function createApp() {
       fail(response, 502, error instanceof Error ? error.message : 'Could not read that playlist.');
     }
   });
+
+  /** Browser file picker / drop: store the bytes, then ingest as a local path. */
+  app.post(
+    '/api/uploads',
+    express.raw({ type: () => true, limit: '80mb' }),
+    (request, response) => {
+      try {
+        const filename = String(request.headers['x-filename'] ?? 'upload');
+        const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from(request.body ?? []);
+        response.status(201).json(saveUpload(filename, body));
+      } catch (error) {
+        fail(response, 400, error instanceof Error ? error.message : 'Could not store that file.');
+      }
+    },
+  );
 
   /** Ingests one track immediately, used when adding to the library outside a mix. */
   app.post('/api/tracks', async (request, response) => {
@@ -301,12 +348,28 @@ export function createApp() {
     sendAudio(paths.renders, response, request.params.filename);
   });
 
+  const clientDir = resolveClientDir();
+  if (clientDir) {
+    app.use(express.static(clientDir));
+    app.use((request, response, next) => {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        next();
+        return;
+      }
+      if (request.path.startsWith('/api') || request.path.startsWith('/media') || request.path.startsWith('/renders')) {
+        next();
+        return;
+      }
+      response.sendFile(path.join(clientDir, 'index.html'));
+    });
+  }
+
   app.use((request, response) => {
     if (request.path.startsWith('/api') || request.path.startsWith('/media') || request.path.startsWith('/renders')) {
       fail(response, 404, `No route for ${request.method} ${request.path}`);
       return;
     }
-    fail(response, 404, 'Not found');
+    fail(response, 404, clientDir ? 'Not found' : 'UI is not built. Run npm run build:client, or use npm run dev:web.');
   });
 
   return app;
@@ -318,25 +381,39 @@ export interface StartedServer {
 }
 
 /**
- * Binds to loopback only. Tries the port the Vite proxy expects, then falls back
- * to any free port so a stale process cannot stop the app from launching.
+ * Binds to loopback by default. MIXR_HOST can open it on the LAN for the
+ * website. Tries the port the Vite proxy expects, then falls back to a free
+ * port so a stale process cannot stop the app from launching.
  */
 export async function startServer(preferredPort = DEFAULT_PORT): Promise<StartedServer> {
   ensureDirs();
   cleanTmp();
 
   const app = createApp();
+  const host = process.env.MIXR_HOST?.trim() || DEFAULT_HOST;
 
   const listen = (port: number) =>
     new Promise<import('node:http').Server>((resolve, reject) => {
-      const server = app.listen(port, '127.0.0.1');
+      const server = app.listen(port, host);
       server.once('listening', () => resolve(server));
       server.once('error', reject);
     });
 
+  // Binding 0.0.0.0 can succeed even when 127.0.0.1:port is already taken by
+  // the desktop app. Browsers then hit the old API and see {"error":"Not found"}.
+  if (host === '0.0.0.0' && !(await canBind(preferredPort, '127.0.0.1'))) {
+    console.warn(
+      `[mixr] 127.0.0.1:${preferredPort} is already taken (quit the mixR desktop app). Using another port.`,
+    );
+  }
+
   let server: import('node:http').Server;
   try {
-    server = await listen(preferredPort);
+    if (host === '0.0.0.0' && !(await canBind(preferredPort, '127.0.0.1'))) {
+      server = await listen(0);
+    } else {
+      server = await listen(preferredPort);
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error;
     console.warn(`[mixr] port ${preferredPort} is busy, falling back to a free port`);
@@ -344,7 +421,10 @@ export async function startServer(preferredPort = DEFAULT_PORT): Promise<Started
   }
 
   const { port } = server.address() as AddressInfo;
-  console.log(`[mixr] api listening on http://127.0.0.1:${port}`);
+  const origin = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}`;
+  console.log(`[mixr] api listening on ${origin}`);
+  if (resolveClientDir()) console.log(`[mixr] website ${origin}`);
+  else console.log('[mixr] API only — run npm run build:client to serve the website from this port');
 
   return {
     port,

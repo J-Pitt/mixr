@@ -51,6 +51,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ ok: boolean; dataDir: string }>('/api/health'),
 
+  share: () =>
+    request<{ localUrl: string; lanUrls: string[]; shareUrl: string; listeningOnLan: boolean }>('/api/share'),
+
   tools: () => request<ToolStatus>('/api/tools'),
 
   library: () => request<LibrarySnapshot>('/api/library'),
@@ -72,6 +75,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(track),
     }),
+
+  /** Stores a browser-selected file so the mix job can ingest it as a local path. */
+  upload: async (file: File): Promise<{ path: string; name: string }> => {
+    const response = await fetch(`${apiBase}/api/uploads`, {
+      method: 'POST',
+      headers: { 'X-Filename': encodeURIComponent(file.name) },
+      body: file,
+    });
+    if (!response.ok) {
+      let message = `Upload failed (${response.status})`;
+      try {
+        const body = (await response.json()) as { error?: string };
+        if (body.error) message = body.error;
+      } catch {
+        // Keep the status-based message.
+      }
+      throw new Error(message);
+    }
+    return (await response.json()) as { path: string; name: string };
+  },
 
   createMix: (payload: {
     title: string;

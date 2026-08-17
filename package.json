@@ -13,6 +13,8 @@
     "dev:electron": "npm run build:electron && MIXR_DEV_SERVER_URL=http://localhost:5173 electron .",
     "dev:web": "concurrently -k -n vite,api -c cyan,green \"npm:dev:vite\" \"npm:dev:api\"",
     "dev:api": "tsx watch server/standalone.ts",
+    "web": "npm run build:client && tsx server/standalone.ts",
+    "start:web": "tsx server/standalone.ts",
     "build": "npm run typecheck && npm run build:client && npm run build:electron",
     "build:client": "vite build",
     "build:electron": "node scripts/buildElectron.mjs",
@@ -30,7 +32,8 @@
     "preview": "vite preview",
     "start": "electron .",
     "dist": "npm run build && electron-builder --mac",
-    "dist:dir": "npm run build && electron-builder --mac dir"
+    "dist:dir": "npm run build && electron-builder --mac dir",
+    "dist:pkg": "npm run build && electron-builder --mac pkg --x64"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -48,11 +51,11 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.1",
-    "esbuild": "^0.28.2",
-    "electron": "^43.0.0",
+    "electron": "32.3.3",
     "electron-builder": "^26.0.12",
-    "typescript": "^5.9.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
     "vite": "^7.1.2",
     "vitest": "^4.1.10"
   },
@@ -75,20 +78,45 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "dir"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "pkg",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "category": "public.app-category.music",
       "icon": "build/icon.png",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "darkModeSupport": true,
       "identity": null,
+      "minimumSystemVersion": "10.15.0",
       "extendInfo": {
+        "LSMinimumSystemVersion": "10.15.0",
         "NSMicrophoneUsageDescription": "mixR does not record audio."
       }
     },
     "dmg": {
       "title": "mixR ${version}"
+    },
+    "pkg": {
+      "installLocation": "/Applications",
+      "allowAnywhere": true,
+      "allowCurrentUserHome": true
     }
   }
 }

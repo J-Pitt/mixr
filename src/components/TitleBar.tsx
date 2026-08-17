@@ -1,4 +1,6 @@
 import { isDesktop } from '../lib/bridge';
+import { InstallAppButton } from './InstallAppButton';
+import { ShareEmailButton } from './ShareEmailButton';
 
 interface TitleBarProps {
   view: 'home' | 'library';
@@ -27,6 +29,8 @@ export function TitleBar({ view, onNavigate, onToggleTheme, isLight }: TitleBarP
       </button>
 
       <div className="topnav-right">
+        <InstallAppButton />
+        <ShareEmailButton />
         <button
           type="button"
           className={view === 'library' ? 'topnav-lib-btn active' : 'topnav-lib-btn'}

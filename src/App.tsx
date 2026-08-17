@@ -51,6 +51,7 @@ export default function App() {
   const [job, setJob] = useState<RenderProgress | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [finding, setFinding] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const unwatchRef = useRef<(() => void) | null>(null);
 
@@ -110,7 +111,7 @@ export default function App() {
   );
 
   const busy = job !== null && job.stage !== 'done' && job.stage !== 'error';
-  const formLocked = busy || finding;
+  const formLocked = busy || finding || uploading;
   // A null `tools` means the probe is still running, not that yt-dlp is missing,
   // so it must not block the button on a cold start.
   const downloadsUsable = tools === null || tools.ytdlp.ready || allLocal(requests);
@@ -118,21 +119,54 @@ export default function App() {
 
   const pickFiles = async () => {
     const desktop = bridge();
-    if (!desktop) {
-      setFormError('Adding files from disk needs the desktop app.');
+    if (desktop) {
+      const files = await desktop.chooseAudioFiles();
+      if (files.length === 0) return;
+      addLocalFiles(files);
       return;
     }
-    const files = await desktop.chooseAudioFiles();
-    if (files.length === 0) return;
-    addLocalFiles(files);
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'audio/*,.mp3,.m4a,.aac,.wav,.aiff,.aif,.flac,.ogg,.opus,.wma';
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      void addBrowserFiles(Array.from(input.files ?? []));
+    });
+    input.click();
   };
 
-  const addLocalFiles = (paths: string[]) => {
-    const additions: SongRow[] = paths.map((filePath) => ({
+  const addBrowserFiles = async (files: File[]) => {
+    const audio = files.filter((file) => file.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|aiff|aif|flac|ogg|oga|opus|wma|alac|webm|mp4)$/i.test(file.name));
+    if (audio.length === 0) {
+      setFormError('Drop an audio file, or paste a song link.');
+      return;
+    }
+
+    setFormError(null);
+    setUploading(true);
+    try {
+      const uploaded: { path: string; name: string }[] = [];
+      for (const file of audio) {
+        uploaded.push(await api.upload(file));
+      }
+      addLocalFiles(
+        uploaded.map((entry) => entry.path),
+        uploaded.map((entry) => entry.name),
+      );
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const addLocalFiles = (filePaths: string[], names?: string[]) => {
+    const additions: SongRow[] = filePaths.map((filePath, index) => ({
       id: crypto.randomUUID(),
       text: '',
       localPath: filePath,
-      localName: filePath.split('/').pop() ?? filePath,
+      localName: names?.[index] ?? filePath.split('/').pop() ?? filePath,
     }));
 
     setRows((current) => {
@@ -177,13 +211,15 @@ export default function App() {
       }
     }
 
-    const text = event.dataTransfer.getData('text/plain').trim();
-    if (isProbablyUrl(text)) {
-      setRows((current) => [...current.filter((row) => row.text.trim() || row.localPath || row.picked), { id: crypto.randomUUID(), text }]);
+    if (files.length > 0 && !desktop) {
+      void addBrowserFiles(files);
       return;
     }
 
-    if (files.length > 0 && !desktop) setFormError('Dropping files needs the desktop app.');
+    const text = event.dataTransfer.getData('text/plain').trim();
+    if (isProbablyUrl(text)) {
+      setRows((current) => [...current.filter((row) => row.text.trim() || row.localPath || row.picked), { id: crypto.randomUUID(), text }]);
+    }
   };
 
   const build = () => {
@@ -335,7 +371,7 @@ export default function App() {
             <p className="summary-note">
               {isDesktop()
                 ? 'Try quitting and reopening mixR.'
-                : 'Start the API with npm run dev:api, or use the desktop app.'}
+                : 'Start the website with npm run web, or the API with npm run dev:api.'}
             </p>
           </section>
         </main>
@@ -479,6 +515,7 @@ export default function App() {
 
                 <VibePicker selected={vibes} onChange={setVibes} disabled={formLocked} />
 
+                {uploading ? <p className="summary-note">Uploading files…</p> : null}
                 {formError ? <p className="error-banner">{formError}</p> : null}
 
                 <div className="center-row">

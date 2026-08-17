@@ -1,0 +1,14 @@
+services:
+  mixr:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      MIXR_DATA_DIR: /data
+      MIXR_HOST: 0.0.0.0
+      MIXR_PORT: 8787
+    volumes:
+      - mixr-data:/data
+
+volumes:
+  mixr-data:

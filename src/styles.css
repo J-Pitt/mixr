@@ -214,6 +214,22 @@ body[data-theme='light'] .theme-toggle:hover {
   text-align: center;
 }
 
+.share-email {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.share-email-note {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
 /* ── Hero ───────────────────────────────────────────────────────────────── */
 
 .hero {
@@ -1190,7 +1206,25 @@ input:disabled {
 
 @media (max-width: 720px) {
   .content {
-    padding: 8px 16px 60px;
+    padding: 8px 16px calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .topnav {
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+    gap: 6px;
+  }
+
+  .topnav-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .share-email-note {
+    display: none;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 
   .track-table-head,

@@ -70,8 +70,8 @@ export function SongRows({ rows, provider, onChange, onPickFiles, onPlaylistLoad
 
       <p className="summary-note">
         Type a song name and pick from the results, paste a YouTube, SoundCloud, or Spotify link, load a playlist, or
-        add files from your Mac. Anything you leave as plain text is searched on {providerLabel[provider]} when the mix
-        is built.
+        add files from your computer. Anything you leave as plain text is searched on {providerLabel[provider]} when the
+        mix is built.
       </p>
     </div>
   );

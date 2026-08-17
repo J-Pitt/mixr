@@ -21,7 +21,7 @@ export interface IngestProgress {
   (update: { phase: 'resolving' | 'downloading' | 'transcoding' | 'analyzing'; fraction?: number; detail?: string }): void;
 }
 
-const AUDIO_EXTENSIONS = new Set([
+export const AUDIO_EXTENSIONS = new Set([
   '.mp3', '.m4a', '.aac', '.wav', '.aiff', '.aif', '.flac', '.ogg', '.oga', '.opus', '.wma', '.alac', '.webm', '.mp4',
 ]);
 
